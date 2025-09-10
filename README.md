@@ -1,2 +1,2 @@
-# dGbyG_api
+# dGbyG
 The python API of dGbyG.
