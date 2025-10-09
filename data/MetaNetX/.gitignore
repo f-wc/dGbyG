@@ -1,0 +1,5 @@
+# Ignore raw file 'chem_prop.tsv', which is too large
+# chem_prop.tsv was  downloaded on 2025-10-09 (MNXref version 4.5)
+# downloaded from https://www.metanetx.org/mnxdoc/mnxref.html
+# (https://www.metanetx.org/cgi-bin/mnxget/mnxref/chem_prop.tsv)
+chem_prop.tsv
