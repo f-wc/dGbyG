@@ -1,0 +1,5 @@
+# Ignore raw file 'structures.tsv.gz', which is too large
+# structures.tsv.gz was downloaded on 2025-10-12 (Last modified 2025-10-09 15:54)
+# downloaded from https://www.ebi.ac.uk/chebi/downloads
+# (https://ftp.ebi.ac.uk/pub/databases/chebi/flat_files/structures.tsv.gz)
+structures.tsv.gz
