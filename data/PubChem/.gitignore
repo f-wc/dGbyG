@@ -1,0 +1,4 @@
+# Ignore raw file 'CID-SMILES.gz', which is too large, which was downloaded on 2025-10-13 (Last modified 2025-09-29)
+# downloaded from https://pubchem.ncbi.nlm.nih.gov/docs/downloads
+# (https://ftp.ncbi.nlm.nih.gov/pubchem/Compound/Extras/CID-SMILES.gz)
+CID-SMILES.gz
