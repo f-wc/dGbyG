@@ -18,6 +18,10 @@ types, including:
 - InChI Key
 - name
 
+<div align="center">
+  <img src="dGbyG_model.png" alt="花朵" width="600">
+</div>
+
 Read [the dGbyG paper](https://doi.org/10.1016/j.cels.2025.101393).
 
 
