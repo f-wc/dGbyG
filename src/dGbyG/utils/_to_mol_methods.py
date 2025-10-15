@@ -39,8 +39,16 @@ def file_to_mol(path:str, sanitize=True) -> Union[Mol, None]:
 
 
 def kegg_compound_to_mol(entry:str, sanitize=True) -> Union[Mol, None]:
-    path = os.path.join(config.kegg_database_path, 'mol', entry+'.mol')
-    if os.path.exists(path):
+    # load data to cache
+    with zipfile.ZipFile(config.recon3d_database_path+'/mol.zip') as zf:
+        namelist = [f.removesuffix('.mol') for f in os.listdir(os.path.join(config.kegg_database_path, 'mol')) if f.endswith('.mol')]
+        filelist = [os.path.join(config.kegg_database_path, 'mol', f'{name}.mol') for name in namelist]
+        cache['kegg'] = pd.DataFrame({'cid': namelist, 'file': filelist}).set_index('cid')
+    
+    # 
+    df = cache['kegg']
+    if entry in df.index:
+        path = df.loc[entry, 'file']
         mol = file_to_mol(path, sanitize=sanitize)
     else:
         kegg_additions_csv_path = os.path.join(config.kegg_database_path, 'kegg_additions.csv')
