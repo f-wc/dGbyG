@@ -8,9 +8,32 @@ from rdkit import RDLogger
 RDLogger.DisableLog('rdApp.*')
 
 from ._custom_error import InputValueError
-from ._to_mol_methods import to_mol
+from ._to_mol_methods import to_mol, to_mol_methods
 from ._get_pKa_methods import get_pKa_from_chemaxon, get_pKa_from_json, check_pKa_json
 
+
+
+def parse_cid(cid:str) -> str:
+    """
+    Parse the cid to cid and cid_type.
+
+    Parameters:
+    ----------
+    cid: str
+        The input cid. e.g. 'kegg:C00063', 'inchi:InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3' or 'smiles:CCO'.
+    
+    Returns:
+    -------
+    cid: str
+        The parsed cid.
+    cid_type: str
+        The type of the cid.
+    """
+    for cid_type, to_mol_method in to_mol_methods().items():
+        if cid.lower().startswith(f'{cid_type}:'):
+            _, cid = [x.strip() for x in cid.split(':', 1)]
+            return cid, cid_type
+    raise InputValueError(f'Invalid cid: {cid}. Please use the format of "cid_type:cid". e.g. "kegg:C00063" or "smiles:CCO".\nThe supported cid_types are {", ".join(to_mol_methods().keys())}')
 
 
 def normalize_mol(mol:Mol) -> Mol:
