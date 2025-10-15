@@ -251,19 +251,22 @@ def get_pKa_from_chemaxon(smiles:str, temperature:float) -> Union[dict, None]:
     p = multiprocessing.Process(target=func, args=(queue, smiles, temperature, ))
     p.start()
     p.join()
-    return_smiles, pKa = queue.get()[0]
+    _, pKa = queue.get()[0]
     
     if pKa == "pKa calculation failed":
         print(smiles, pKa)
         return None
     elif isinstance(pKa, dict):
+        pKa_json = read_pKa_json()
+        pKa_json[smiles] = {**pKa_json.get(smiles, {}), **{str(temperature): pKa}}
+        write_pKa_json(pKa_json)
         return pKa
     else:
         raise Exception(f"Unknown error, return value: {pKa}")
 
 def batch_calculation_pKa_to_json(smiles_list:list, temperature:float) -> None:
     """
-    Batch get pKa values from ChemAxon's Calculator plugins (license required) and save to local files (.json).
+    Batch get pKa values from ChemAxon's Calculator plugins (license required) and save to local files (.json.gz).
 
     Parameters
     ----------
@@ -319,7 +322,7 @@ def batch_calculation_pKa_to_json(smiles_list:list, temperature:float) -> None:
 
 def get_pKa_from_json(smiles:str, temperature:float) -> Union[dict, None]:
     """
-    Get pKa values for a single SMILES from local files (.json).
+    Get pKa values for a single SMILES from local files (.json.gz).
 
     Parameters
     ----------
