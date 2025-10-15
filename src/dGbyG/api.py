@@ -36,7 +36,7 @@ class Compound(object):
         # Normalize mol
         if isinstance(self.raw_mol, Mol):
             self.mol = normalize_mol(self.raw_mol)
-        elif mol is None:
+        elif self.raw_mol is None:
             self.mol = None
         else:
             raise InputValueError(f'Unknown error in Compound.__init__().')
