@@ -10,7 +10,7 @@ from torch_geometric.data import Data
 
 from . import default_T, default_pMg, default_pH, default_I, default_e_potential, default_condition
 from .utils import to_mol, transformed_ddGf, get_pKa
-from .utils.mol_utils import normalize_mol, atom_bag
+from .utils.mol_utils import normalize_mol, atom_bag, parse_cid
 from .utils.reaction_utils import parse_equation, build_equation, atom_diff, is_balanced, read_rxn_file
 from .utils._custom_error import NoPkaError, InputValueError
 from .model.datasets import mol_to_graph_data
@@ -22,14 +22,16 @@ model_cache = {}
 
 
 class Compound(object):
-    def __init__(self, mol: Union[Mol, str, None], mol_type:str='mol') -> None:
+    def __init__(self, mol: Union[Mol, str, None], cid_type:Union[str, None]=None) -> None:
         '''
         '''
         # 
         if isinstance(mol, Mol) or (mol is None):
             self.raw_mol = mol
-        elif isinstance(mol, str):
-            self.raw_mol = to_mol(mol, mol_type)
+        elif isinstance(mol, str) and isinstance(cid_type, str):
+            self.raw_mol = to_mol(mol, cid_type)
+        elif isinstance(mol, str) and cid_type is None:
+            raise InputValueError(f"Please specify the type of {mol} with 'cid_type='.")
         else:
             raise InputValueError('The input of Compound() must be rdkit.Chem.rdchem.Mol, string, or None.')
 
@@ -194,7 +196,8 @@ class Compound(object):
 
 
 class Reaction(object):
-    def __init__(self, reaction:Union[str, ChemicalReaction, Dict[Compound|Mol|str, float|int]], mol_type:str='compound') -> None:
+    def __init__(self, reaction:Union[str, ChemicalReaction, Dict[Compound|Mol|str, float|int]], 
+                 cids_type:Union[str, None]=None) -> None:
         """
         Parameters
         ----------
@@ -208,15 +211,15 @@ class Reaction(object):
         mol_type: str
             'path', 'compound', 'mol', 'smiles', 'kegg', and so on.
         """
-        if 'path' in mol_type:
+        if isinstance(cids_type, str) and ('path' in cids_type):
             reaction = read_rxn_file(reaction)
+            self.raw_reaction = dict([(Compound(mol), -1) for mol in reaction.GetReactants()] + [(Compound(mol), 1) for mol in reaction.GetProducts()])
+        elif isinstance(reaction, ChemicalReaction):
             self.raw_reaction = dict([(Compound(mol), -1) for mol in reaction.GetReactants()] + [(Compound(mol), 1) for mol in reaction.GetProducts()])
         elif isinstance(reaction, str):
             self.raw_reaction = parse_equation(reaction)
         elif isinstance(reaction, dict):
             self.raw_reaction = reaction
-        elif isinstance(reaction, ChemicalReaction):
-            self.raw_reaction = dict([(Compound(mol), -1) for mol in reaction.GetReactants()] + [(Compound(mol), 1) for mol in reaction.GetProducts()])
         else:
             raise InputValueError(f'Cannot accept type{type(reaction)} as the input of reaction.')
         
@@ -224,8 +227,14 @@ class Reaction(object):
         for comp, coeff in self.raw_reaction.items():
             if isinstance(comp, Compound):
                 pass
-            elif isinstance(comp, (Mol, str)):
-                comp = Compound(comp, mol_type)
+            elif isinstance(comp, Mol):
+                comp = Compound(comp)
+            elif isinstance(comp, str) and isinstance(cids_type, str):
+                comp = Compound(comp, cids_type)
+            elif isinstance(comp, str) and cids_type is None:
+                _cid, _cid_type = parse_cid(comp)
+                comp = Compound(_cid, _cid_type)
+                
             else:
                 raise InputValueError('Cannot accept type{0}'.format(type(comp)))
             
