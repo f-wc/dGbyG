@@ -160,7 +160,6 @@ dependencies:
       - certifi==2025.8.3
       - cobra==0.29.1
       - depinfo==2.2.0
-      - dgbyg==0.1.0
       - diskcache==5.6.3
       - frozenlist==1.7.0
       - fsspec==2025.9.0
