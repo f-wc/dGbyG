@@ -59,6 +59,10 @@ class Compound(object):
         return Chem.MolToInchi(self.mol) if self.mol else None
     
     @property
+    def InChIKey(self) -> str:
+        return Chem.MolToInchiKey(self.mol) if self.mol else None
+
+    @property
     def image(self):
         if None:
             for atom in self.mol.GetAtoms():
