@@ -262,6 +262,7 @@ def to_mol_methods() -> Dict[str, Callable]:
                'inchi-key': inchi_key_to_mol,
                'inchi_key': inchi_key_to_mol,
                'inchi key': inchi_key_to_mol,
+               'inchikey': inchi_key_to_mol,
                'bigg': bigg_id_to_mol,
                'bigg.metabolite': bigg_id_to_mol,
                'name': name_to_mol,
