@@ -62,15 +62,23 @@ def read_pKa_json() -> dict:
     -------
     pka : dict
     """
-    if not os.path.isfile(chemaxon_pka_json_path):
-        with gzip.open(chemaxon_pka_json_path, "wt", encoding="utf-8") as f:
-            print(f'{chemaxon_pka_json_path} not found, create an empty file')
-            pka_cache['chemaxon_pKa_json'] = {}
-            json.dump({}, f, sort_keys=True, indent=2)
-    elif 'chemaxon_pKa_json' not in pka_cache.keys():
-        with gzip.open(chemaxon_pka_json_path, "rt", encoding="utf-8") as f:
-            portalocker.lock(f, portalocker.LOCK_SH)
-            pka_cache['chemaxon_pKa_json'] = json.load(f)
+    if 'chemaxon_pKa_json' not in pka_cache.keys():
+        if os.path.isfile(chemaxon_pka_json_path.removesuffix(".gz")):
+            # if uncompressed json file exists, open it.
+            with open(chemaxon_pka_json_path.removesuffix(".gz"), "r", encoding="utf-8") as f:
+                portalocker.lock(f, portalocker.LOCK_SH)
+                pka_cache['chemaxon_pKa_json'] = json.load(f)
+        elif os.path.isfile(chemaxon_pka_json_path):
+            # if compressed json file exists, open it.
+            with gzip.open(chemaxon_pka_json_path, "rt", encoding="utf-8") as f:
+                portalocker.lock(f, portalocker.LOCK_SH)
+                pka_cache['chemaxon_pKa_json'] = json.load(f)
+        else:
+            # if no json file exists, create an empty one.
+            with gzip.open(chemaxon_pka_json_path, "wt", encoding="utf-8") as f:
+                print(f'{chemaxon_pka_json_path} not found, create an empty file')
+                pka_cache['chemaxon_pKa_json'] = {}
+                json.dump({}, f, sort_keys=True, indent=2)
     return pka_cache['chemaxon_pKa_json']
 
 def write_pKa_json(data:dict) -> None:
@@ -385,7 +393,7 @@ def check_pKa_json(smiles_list:list, temperature:float, predict:bool=True) -> Li
 def get_pKa_methods():
     methods = {}
     # if pka json file exists, add method to get pka from json file
-    if os.path.isfile(chemaxon_pka_json_path):
+    if os.path.isfile(chemaxon_pka_json_path) or os.path.isfile(chemaxon_pka_json_path.removesuffix(".gz")):
         methods['chemaxon_pKa_json'] = get_pKa_from_json
 
     # if chemaxon jar files and license file exist, add method to get pka from chemaxon
