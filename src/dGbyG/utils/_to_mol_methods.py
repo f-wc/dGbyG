@@ -62,9 +62,9 @@ def kegg_compound_to_mol(entry:str, sanitize=True) -> Union[Mol, None]:
 def metanetx_id_to_mol(cid:str, sanitize=True) -> Union[Mol, None]:
     # load data to cache
     if 'metanetx' not in cache:
-        path = os.path.join(config.metanetx_database_path, 'structures.csv.zip')
-        if os.path.isfile(path.removesuffix('.zip')):
-            path = path.removesuffix('.zip')
+        path = os.path.join(config.metanetx_database_path, 'structures.csv.gz')
+        if os.path.isfile(path.removesuffix('.gz')):
+            path = path.removesuffix('.gz')
         cache['metanetx'] = pd.read_csv(path, comment='#', index_col=0, header=0)
     
     # 
@@ -79,9 +79,9 @@ def metanetx_id_to_mol(cid:str, sanitize=True) -> Union[Mol, None]:
 def hmdb_id_to_mol(cid:str, sanitize=True) -> Union[Mol, None]:
     # load data to cache
     if 'hmdb' not in cache:
-        path = os.path.join(config.hmdb_database_path, 'structures.csv.zip')
-        if os.path.isfile(path.removesuffix('.zip')):
-            path = path.removesuffix('.zip')
+        path = os.path.join(config.hmdb_database_path, 'structures.csv.gz')
+        if os.path.isfile(path.removesuffix('.gz')):
+            path = path.removesuffix('.gz')
         cache['hmdb'] = pd.read_csv(path, comment='#', index_col=0, header=0)
     
     # 
@@ -100,9 +100,9 @@ def hmdb_id_to_mol(cid:str, sanitize=True) -> Union[Mol, None]:
 def chebi_id_to_mol(cid:str, sanitize=True) -> Union[Mol, None]:
     # load data to cache
     if 'chebi' not in cache:
-        path = os.path.join(config.chebi_database_path, 'structures.csv.zip')
-        if os.path.isfile(path.removesuffix('.zip')):
-            path = path.removesuffix('.zip')
+        path = os.path.join(config.chebi_database_path, 'structures.csv.gz')
+        if os.path.isfile(path.removesuffix('.gz')):
+            path = path.removesuffix('.gz')
         cache['chebi'] = pd.read_csv(path, comment='#', header=0, dtype=str).set_index('ChEBI_ID')
     
     # 

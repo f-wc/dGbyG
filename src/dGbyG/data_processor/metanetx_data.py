@@ -1,5 +1,5 @@
 import os
-import zipfile
+import gzip
 import pandas as pd
 from io import StringIO
 
@@ -29,8 +29,8 @@ def raw_file_to_csv(file='chem_prop.tsv'):
     df.to_csv(csv_buffer, mode='a', index=False, header=True)
     
     # write to file
-    csv_path = os.path.join(config.metanetx_database_path, 'structures.csv.zip')
+    csv_path = os.path.join(config.metanetx_database_path, 'structures.csv.gz')
     print(f"Writing {csv_path}")
-    with zipfile.ZipFile(csv_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        zipf.writestr(csv_path, csv_buffer.getvalue())
+    with gzip.open(csv_path, 'wb') as gzf:
+        gzf.write(csv_buffer.getvalue().encode('utf-8'))
     print(f"Done.")
