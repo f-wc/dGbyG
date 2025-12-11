@@ -7,6 +7,7 @@ from typing import Dict, Callable, Union
 import pubchempy as pcp
 from Bio import Entrez
 from rdkit import Chem
+from rdkit.Chem import Descriptors
 from rdkit.Chem.rdchem import Mol
 from rdkit import RDLogger
 RDLogger.DisableLog('rdApp.*')
@@ -220,7 +221,7 @@ def bigg_id_to_mol(cid:str, sanitize=True) -> Union[Mol, None]:
         return None
 
 
-def name_to_mol(name:str, sanitize=True) -> Union[Mol, None]:
+def name_to_mol(name:str, sanitize=True, return_smiles=False) -> Union[Mol, None]:
     # from pubchempy
     comps = pcp.get_compounds(name, 'name')
     if comps:
@@ -235,7 +236,7 @@ def name_to_mol(name:str, sanitize=True) -> Union[Mol, None]:
         try:
             response = requests.get(url)
             if response.status_code == 200:
-                smiles = response.text.strip()  # 返回SMILES
+                smiles = response.text.strip()  # return SMILES
             else:
                 pass
         except Exception as e:
@@ -246,7 +247,7 @@ def name_to_mol(name:str, sanitize=True) -> Union[Mol, None]:
         mol = smiles_to_mol(smiles, sanitize=sanitize)
     else:
         mol = None
-    return mol
+    return mol if not return_smiles else smiles
 
 
 
@@ -333,3 +334,16 @@ def to_mol(cid:str, cid_type:str, Hs:bool=True, sanitize:bool=True) -> Union[Mol
     return tuple(output.values())[0] if output else None
 
 
+
+def name_to_smiles(name:str) -> Union[str, None]:
+    # This function is in prototype stage
+    best_mol = name_to_mol(name)
+    if best_mol:
+        # 
+        cids = pcp.get_cids(name, "name", "substance", list_return="flat")
+        comps = pcp.get_compounds(cids, 'cid')
+        comps = [comp for comp in comps if abs(comp.exact_mass - Descriptors.ExactMolWt(best_mol)) < 2e-4]
+        smiles = [comp.smiles for comp in comps] + [Chem.MolToSmiles(best_mol)]
+    else:
+        smiles = None
+    return smiles
