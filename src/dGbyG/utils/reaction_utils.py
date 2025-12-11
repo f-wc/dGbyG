@@ -30,7 +30,7 @@ def parse_equation(equation:str, eq_sign=None) -> dict:
         The equation dictionary, with reactants and products as keys and their coefficients as values.
     """
     # 
-    eq_Signs = [' = ', ' <=> ', ' -> ']
+    eq_Signs = [' = ', ' <=> ', ' -> ', '→', '⇌']
     if eq_sign:
         equation = equation.split(eq_sign)
     else:
