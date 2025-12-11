@@ -15,6 +15,7 @@ from .utils.reaction_utils import parse_equation, build_equation, atom_diff, is_
 from .utils._custom_error import NoPkaError, InputValueError
 from .model.datasets import mol_to_graph_data
 from .model.inference import Inference_Model
+from .utils._to_mol_methods import name_to_smiles
 
 infer_model_path = os.path.join(__file__.split('src')[0], 'models', 'mpnn_A139_B23_E300_L2')
 model_cache = {}
@@ -29,7 +30,12 @@ class Compound(object):
         if isinstance(mol, Mol) or (mol is None):
             self.raw_mol = mol
         elif isinstance(mol, str) and isinstance(cid_type, str):
-            self.raw_mol = to_mol(mol, cid_type)
+            if cid_type.lower() in ['fuzzy name', 'fuzzy_name']:
+                Candidates = [comp for comp in [Compound(x, 'smiles') for x in name_to_smiles(mol)] if comp.mol is not None]
+                raw_mol = sorted(Candidates, key=lambda comp: comp.standard_dGf_prime)[0].mol if Candidates else None
+                self.raw_mol = raw_mol
+            else:
+                self.raw_mol = to_mol(mol, cid_type)
         elif isinstance(mol, str) and cid_type is None:
             raise InputValueError(f"Please specify the type of {mol} with 'cid_type='.")
         else:
@@ -183,7 +189,7 @@ class Compound(object):
     @property
     @lru_cache(maxsize=None)
     def standard_dGf_prime(self) -> Tuple[np.float32, np.float32]:
-        return np.mean(self.standard_dGf_prime_list), np.std(self.standard_dGf_prime_list)
+        return np.mean(self.standard_dGf_prime_list).item(), np.std(self.standard_dGf_prime_list).item()
     
     @property
     def transformed_standard_dGf_prime(self) -> Tuple[np.float32, np.float32]:
@@ -393,7 +399,7 @@ class Reaction(object):
         -------
             The tuple of the mean and SD of the standard dG for the reaction.
         """
-        return np.mean(self.standard_dGr_prime_list), np.std(self.standard_dGr_prime_list)
+        return np.mean(self.standard_dGr_prime_list).item(), np.std(self.standard_dGr_prime_list).item()
         
     @property
     def transformed_standard_dGr_prime(self) -> Tuple[np.float32, np.float32]:
