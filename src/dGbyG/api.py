@@ -17,7 +17,7 @@ from .model.datasets import mol_to_graph_data
 from .model.inference import Inference_Model
 from .utils._to_mol_methods import name_to_smiles
 
-infer_model_path = os.path.join(__file__.split('src')[0], 'models', 'mpnn_A139_B23_E300_L2')
+infer_model_path = (os.path.join(__file__.split('src')[0], 'models', 'mpnn_A139_B23_E300_L2_v2'), )
 model_cache = {}
 
 
@@ -178,11 +178,11 @@ class Compound(object):
 
         # 
         if self.Smiles == '[H+]':
-            return np.zeros(infer_model.num_models)
+            return np.zeros(infer_model.num_head)
         elif self.mol:
             return infer_model(self.graph_data).squeeze().numpy()
         elif self.mol is None:
-            return np.full(infer_model.num_models, np.nan)
+            return np.full(infer_model.num_head, np.nan)
         else:
             raise ValueError('Unknown value of self.mol')
     

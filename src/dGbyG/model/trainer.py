@@ -113,7 +113,7 @@ class Trainer(object):
                          n_start:int=None, n_end:int=None, train_idx:list=None, val_idx:list=None, random_seed:int=None):
         # This funtion is used for cross_validation
         total_idx = list(range(dataset.S.shape[1]))
-        Result_df = pd.DataFrame(dataset.dGs.cpu().numpy(), index=total_idx, columns=['r'])
+        Result_df = pd.DataFrame(dataset.dGs.cpu().numpy(), index=total_idx, columns=['object'])
         Loss = torch.empty(size=(0,epochs)).to(self.device)
         
         print('Cross validation. Start at:{0}'.format(datetime.now().strftime(r'%Y-%m-%d %H:%M:%S'))) 
