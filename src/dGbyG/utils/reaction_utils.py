@@ -31,24 +31,22 @@ def parse_equation(equation:str, eq_sign=None) -> dict:
     """
     # 
     eq_Signs = [' = ', ' <=> ', ' -> ', '→', '⇌']
-    if eq_sign:
-        equation = equation.split(eq_sign)
-    else:
-        for eq_sign in eq_Signs:
-            if eq_sign in equation:
-                equation = equation.split(eq_sign)
+    if eq_sign is None:
+        for x in eq_Signs:
+            if x in equation:
+                eq_sign = x
                 break
             
+    if eq_sign is None:
+        return {equation.strip():1}
         
-        
-    if not type(equation)==list:
-        return {equation:1}
+    equation = equation.split(eq_sign)
+    equation = [s.strip().split(' + ') for s in equation]
     
     equation_dict = {}
-    equation = [x.split(' + ') for x in equation]
-
     for side, coefficient in zip(equation, (-1,1)):
         for t in side:
+            t = t.strip()
             if (reactant := re.match(r'^(\d+) (.+)$', t)) or (reactant := re.match(r'^(\d+\.\d+) (.+)$', t)):
                 value = float(reactant.group(1))
                 entry = reactant.group(2)
