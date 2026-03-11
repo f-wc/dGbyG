@@ -1,5 +1,7 @@
 import os
 import rdkit
+import base64
+from io import BytesIO
 from rdkit import Chem
 from rdkit.Chem.rdchem import Mol
 from rdkit.Chem.rdChemReactions import ChemicalReaction
@@ -27,6 +29,8 @@ class Compound(object):
         '''
         '''
         # 
+        self.input = mol
+        
         if isinstance(mol, Mol) or (mol is None):
             self.raw_mol = mol
         elif isinstance(mol, str) and isinstance(cid_type, str):
@@ -201,6 +205,104 @@ class Compound(object):
         else:
             return self.standard_dGf_prime
         
+    # ---------------------------------------------------------
+    # 1. 字符串显示方法 __str__
+    # ---------------------------------------------------------
+    def __str__(self) -> str:
+        return self.Smiles if self.Smiles else "None"
+
+    # ---------------------------------------------------------
+    # 2. 文本显示方法 __repr__
+    # ---------------------------------------------------------
+    def __repr__(self) -> str:
+        line = "─" * 60
+        info = f"\n{line}\n"
+        info += f"{'化合物对象':^58}\n"
+        info += f"{line}\n"
+        info += f"SMILES:    {self.Smiles}\n"
+        info += f"InChI:     {self.InChI}\n"
+        info += f"InChIKey:  {self.InChIKey}\n"
+        
+        # 热力学数据 (使用 _f 表示下标)
+        dg_mean, dg_std = self.standard_dGf_prime
+        if dg_mean is not None and not np.isnan(dg_mean):
+            info += f"Δ_fG'°:    {dg_mean:.1f} ± {dg_std:.1f} kJ/mol\n"
+        
+        # 状态信息
+        trans_status = "Yes" if self.can_be_transformed else "No"
+        info += f"Has pKa:    {trans_status}\n"
+        
+        info += f"{line}"
+        return info
+
+    # ---------------------------------------------------------
+    # 3. HTML 显示方法 _repr_html_
+    # ---------------------------------------------------------
+    def _repr_html_(self) -> str:
+        # 1. 处理图片：转为 Base64 编码
+        img_html = "<div style='color:#999; font-size:12px; text-align:center;'>无结构图</div>"
+        if self.mol:
+            try:
+                img = self.image
+                if img:
+                    buffered = BytesIO()
+                    img.save(buffered, format="PNG")
+                    img_str = base64.b64encode(buffered.getvalue()).decode()
+                    img_html = f"<img src='data:image/png;base64,{img_str}' style='max-width:200px; border-radius:4px; border:1px solid #eee;'/>"
+            except Exception:
+                img_html = "<div style='color:red;'>图片生成错误</div>"
+
+        # 2. 提取关键数据
+        smiles = self.Smiles if self.Smiles else "N/A"
+        inchi = self.InChI if self.InChI else "N/A"
+        inchikey = self.InChIKey if self.InChIKey else "N/A"
+        
+        dg_mean, dg_std = self.standard_dGf_prime
+        dg_text = f"{dg_mean:.1f} ± {dg_std:.1f} kJ/mol" if not np.isnan(dg_mean) else "N/A"
+        
+        pka_status = "✅ Yes" if self.can_be_transformed else "❌ No"
+        pka_color = "#28a745" if self.can_be_transformed else "#dc3545"
+
+        # 3. HTML 结构：左右布局
+        html = f"""
+        <div style="font-family: 'Segoe UI', 'Microsoft YaHei', Arial, sans-serif;
+                    background-color: #ffffff; color: #333;
+                    border: 1px solid #e1e4e8; border-radius: 8px; 
+                    padding: 15px; margin: 8px 0;
+                    box-shadow: 0 2px 6px rgba(0,0,0,0.05); 
+                    display: inline-block; min-width: 450px;">
+            <h4 style="margin: 0 0 10px 0; color: #2c3e50; border-bottom: 1px solid #eee; padding-bottom: 8px;">
+                🧪 化合物对象
+            </h4>
+            <div style="display: flex; flex-direction: row; gap: 20px; align-items: center;">
+                <div style="flex-shrink: 0; background: #f8f9fa; padding: 5px; border-radius: 4px;">
+                    {img_html}
+                </div>
+                <div style="flex-grow: 1; font-size: 13px; line-height: 1.6;">
+                    <div style="margin-bottom: 4px;">
+                        <span style="font-weight: bold; color: #555;">SMILES:</span> 
+                        <code style="background:#f5f5f5; padding:2px 4px; border-radius:3px;">{smiles}</code>
+                    </div>
+                    <div style="margin-bottom: 4px;">
+                        <span style="font-weight: bold; color: #555;">InChI:</span> 
+                        <code style="background:#f5f5f5; padding:2px 4px; border-radius:3px; font-size: 11px;">{inchi}</code>
+                    </div>
+                    <div style="margin-bottom: 4px;">
+                        <span style="font-weight: bold; color: #555;">InChIKey:</span> {inchikey}
+                    </div>
+                    <div style="margin-bottom: 4px;">
+                        <span style="font-weight: bold; color: #555;">Δ<sub>f</sub>G'°:</span> 
+                        <span style="color: #007bff; font-weight: 600;">{dg_text}</span>
+                    </div>
+                    <div>
+                        <span style="font-weight: bold; color: #555;">Has pKa:</span> 
+                        <span style="color: {pka_color}; font-weight: 600;">{pka_status}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        """
+        return html
 
 
 
@@ -416,3 +518,105 @@ class Reaction(object):
             return transformed_standard_dGr_prime, self.standard_dGr_prime[1]
         else:
             return self.standard_dGr_prime
+    
+    def _build_equation_string(self, eq_sign: str = '=') -> str:
+        """
+        内部方法：构建反应方程式字符串
+        
+        Parameters
+        ----------
+        eq_sign : str, optional
+            反应符号，默认为 '='
+            
+        Returns
+        -------
+        str
+            格式化的反应方程式字符串
+        """
+        return build_equation(self.rxnSmiles, eq_sign=eq_sign)
+
+    # ═════════════════════════════════════════════════════════════════
+    # 2. 文本显示方法 __repr__
+    # ═════════════════════════════════════════════════════════════════
+    def __repr__(self) -> str:
+        """
+        文本格式显示，用于列表、终端环境或后备显示
+        """
+        line = "─" * 50
+        info = f"\n{line}\n"
+        info += f"{'Chemical Reaction':^48}\n"
+        info += f"{line}\n"
+        
+        # Equation
+        info += f"Equation:       {self._build_equation_string('→')}\n"
+        
+        # Balance
+        balance = "✅ Yes" if self.is_balanced else "❌ No"
+        info += f"Is Balanced:         {balance}\n"
+        
+        # Thermodynamics
+        dg_mean, dg_std = self.standard_dGr_prime
+        if dg_mean is not None and not np.isnan(dg_mean):
+            info += f"Δ<sub>r</sub>G'°:          {dg_mean:.1f} ± {dg_std:.1f} kJ/mol\n"
+        else:
+            info += f"Δ<sub>r</sub>G'°:          N/A\n"
+        
+        info += f"{line}"
+        return info
+
+    # ═════════════════════════════════════════════════════════════════
+    # 3. HTML 显示方法 _repr_html_ (精简版：垂直排列，英文标签)
+    # ═════════════════════════════════════════════════════════════════
+    def _repr_html_(self) -> str:
+        """
+        HTML 格式显示，用于 Jupyter Notebook
+        精简紧凑，仅显示方程式、平衡状态和吉布斯能
+        """
+        equation = self._build_equation_string('→')
+        
+        balance_status = "✅ Yes" if self.is_balanced else "❌ No"
+        balance_color = "#28a745" if self.is_balanced else "#dc3545"
+        
+        dg_text = "N/A"
+        dg_mean, dg_std = self.standard_dGr_prime
+        if dg_mean is not None and not np.isnan(dg_mean):
+            dg_text = f"{dg_mean:.1f} ± {dg_std:.1f} kJ/mol"
+
+        html = f"""
+        <div style="
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background-color: #ffffff; color: #333;
+            border: 1px solid #e1e4e8; border-left: 4px solid #4a90e2;
+            border-radius: 6px; padding: 12px;
+            margin: 6px 0; box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+            display: inline-block; min-width: 300px; font-size: 13px;
+        ">
+            <div style="margin-bottom: 8px;">
+                <span style="font-weight: bold; color: #555;">Equation:</span><br>
+                <code style="
+                    background: #f8f9fa; padding: 4px 8px; border-radius: 3px;
+                    font-size: 14px; color: #d63384; display: inline-block; margin-top: 3px;
+                ">{equation}</code>
+            </div>
+            
+            <div style="margin-bottom: 8px;">
+                <span style="font-weight: bold; color: #555;">Is Balanced:</span> 
+                <span style="color: {balance_color}; font-weight: 600;">{balance_status}</span>
+            </div>
+            
+            <div>
+                <span style="font-weight: bold; color: #555;">Δ<sub>r</sub>G'°:</span> 
+                <span style="color: #007bff; font-weight: 600;">{dg_text}</span>
+            </div>
+        </div>
+        """
+        return html
+
+    # ═════════════════════════════════════════════════════════════════
+    # 4. 简洁字符串方法 __str__
+    # ═════════════════════════════════════════════════════════════════
+    def __str__(self) -> str:
+        """
+        print() 时显示简洁版本，使用默认的 '=' 符号
+        """
+        return self._build_equation_string()
