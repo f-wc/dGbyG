@@ -67,6 +67,8 @@ def build_equation(equation_dict:dict, eq_sign:str='=') -> str:
     # 
     left, right = [], []
     for comp, coeff in equation_dict.items():
+        if comp is None:
+            comp = "Unknown"
         if coeff < 0:
             x = comp if coeff==-1 else str(-coeff)+' '+comp
             left.append(x)
