@@ -17,7 +17,9 @@ from .utils.reaction_utils import parse_equation, build_equation, atom_diff, is_
 from .utils._custom_error import NoPkaError, InputValueError
 from .model.datasets import mol_to_graph_data
 from .model.inference import Inference_Model
-from .utils._to_mol_methods import name_to_smiles
+from .utils._to_mol_methods import name_to_smiles, to_mol_methods
+
+pKa_source = None
 
 infer_model_path = (os.path.join(__file__.split('src')[0], 'models', 'mpnn_A139_B23_E300_L2_v2'), )
 model_cache = {}
@@ -25,6 +27,9 @@ model_cache = {}
 
 
 class Compound(object):
+    
+    recognizable_cids = list(to_mol_methods().keys())
+
     def __init__(self, mol: Union[Mol, str, None], cid_type:Union[str, None]=None) -> None:
         '''
         '''
@@ -136,15 +141,16 @@ class Compound(object):
 
     @lru_cache(16)
     def pKa(self, temperature=default_T, source:Union[str, List[str]]='auto') -> Union[dict, None]:
-        if self.Smiles == '[H+]':
+        if self.Smiles in ['[H+]', '[1H+]']:
             return {'acidicValuesByAtom': [{'atomIndex': 0, 'value': np.nan}], 
                     'basicValuesByAtom': [{'atomIndex': 0, 'value': np.nan}]}
         else:
+            source = source if pKa_source is None else pKa_source 
             return get_pKa(self.Smiles, temperature, source) if self.mol else None
     
     @property
     def can_be_transformed(self) -> bool:
-        return True if self.pKa(default_T) or (self.Smiles == '[H+]') else False
+        return True if self.pKa(default_T) or (self.Smiles in ['[H+]', '[1H+]']) else False
 
     @property
     def transformed_ddGf(self):
@@ -572,7 +578,7 @@ class Reaction(object):
         HTML 格式显示，用于 Jupyter Notebook
         精简紧凑，仅显示方程式、平衡状态和吉布斯能
         """
-        equation = self._build_equation_string('→')
+        equation = self._build_equation_string('=')
         
         balance_status = "✅ Yes" if self.is_balanced else "❌ No"
         balance_color = "#28a745" if self.is_balanced else "#dc3545"
