@@ -10,6 +10,7 @@ import json
 import gzip
 import jpype
 import shutil
+import sqlite3
 import requests
 import portalocker
 import multiprocessing
@@ -19,14 +20,11 @@ from typing import List, Union, Iterable
 from tqdm import tqdm
 
 from ._custom_error import NoLicenseError, InputValueError
-
-
-pka_cache = {}
+from ..__init__ import default_T
 
 
 # Path settings
-# set chemaxon_pka_json_path
-chemaxon_pka_json_path = os.path.join(__file__.split('src')[0], 'data', 'chemaxon_pKa.json.gz')
+chemaxon_pka_db_path = os.path.join(__file__.split('src')[0], 'data', 'chemaxon_pka.db')
 
 # set chemaxon_jar_dir
 if shutil.which('cxcalc'):
@@ -53,58 +51,6 @@ else:
     else:
         chemaxon_license_file_path = ''
 
-
-def read_pKa_json() -> dict:
-    """
-    Read pKa values from a local cache file (.json.gz file).
-
-    Returns
-    -------
-    pka : dict
-    """
-    if 'chemaxon_pKa_json' not in pka_cache.keys():
-        if os.path.isfile(chemaxon_pka_json_path.removesuffix(".gz")):
-            # if uncompressed json file exists, open it.
-            with open(chemaxon_pka_json_path.removesuffix(".gz"), "r", encoding="utf-8") as f:
-                portalocker.lock(f, portalocker.LOCK_SH)
-                pka_cache['chemaxon_pKa_json'] = json.load(f)
-        elif os.path.isfile(chemaxon_pka_json_path):
-            # if compressed json file exists, open it.
-            with gzip.open(chemaxon_pka_json_path, "rt", encoding="utf-8") as f:
-                portalocker.lock(f, portalocker.LOCK_SH)
-                pka_cache['chemaxon_pKa_json'] = json.load(f)
-        else:
-            # if no json file exists, create an empty one.
-            with gzip.open(chemaxon_pka_json_path, "wt", encoding="utf-8") as f:
-                print(f'{chemaxon_pka_json_path} not found, create an empty file')
-                pka_cache['chemaxon_pKa_json'] = {}
-                json.dump({}, f, sort_keys=True, indent=2)
-    return pka_cache['chemaxon_pKa_json']
-
-def write_pKa_json(data:dict) -> None:
-    """
-    Write pKa values to a local cache file (.json.gz file).
-
-    Parameters
-    ----------
-    pka : dict
-    """
-    print(f'Writing data to {chemaxon_pka_json_path}')
-    with gzip.open(chemaxon_pka_json_path, "wt", encoding="utf-8") as f:
-        portalocker.lock(f, portalocker.LOCK_EX)
-        #json.dump(data, f, sort_keys=True, indent=2)
-        f.write('{'+'\n')
-        for i, key in enumerate(sorted(data.keys())):
-            if i != 0:
-                f.write(', \n')
-            f.write(f'{json.dumps(key)}: ')
-            json.dump(data[key], f, sort_keys=True)
-        f.write('\n'+'}')
-    print('Done')
-    
-    # update cache
-    pka_cache['chemaxon_pKa_json'] = data
-    return data
 
 def get_pKa_from_chemaxon_rest(smiles:str, temperature:float) -> dict:
     """
@@ -148,7 +94,8 @@ def get_pKa_from_chemaxon_rest(smiles:str, temperature:float) -> dict:
 
     return pka
 
-def _batch_get_pKa_from_chemaxon(smiles_list:List[str], temperature:float) -> List[str|dict]:
+
+def _batch_get_pKa_using_chemaxon_java(smiles_list:List[str], temperature:float) -> List[str|dict]:
     """
     Get pKa values for a list of SMILES from ChemAxon's Calculator plugins (license required).
 
@@ -196,28 +143,28 @@ def _batch_get_pKa_from_chemaxon(smiles_list:List[str], temperature:float) -> Li
     pKa.setpKaPrefixType(2) # 'acidic,basic'
     pKa.setAcidicpKaUpperLimit(20)
     pKa.setBasicpKaLowerLimit(-20)
-
-    if len(smiles_list) > 1:
-        smiles_list = tqdm(smiles_list)
         
     for smiles in smiles_list:
         try:
             mol=MolImporter.importMol(smiles)
             pKa.setMolecule(mol)
             if pKa.run():
-                apka, bpka = [], []
+                apka, bpka = {}, {}
                 for i in range(mol.getAtomCount()):
-                    apka.append({'atomIndex': i, 'value': float(pKa.getpKa(i, pKa.ACIDIC))})
-                    bpka.append({'atomIndex': i, 'value': float(pKa.getpKa(i, pKa.BASIC))})
-                res = (smiles, {'acidicValuesByAtom':apka, 'basicValuesByAtom':bpka})
+                    a, b = float(pKa.getpKa(i, pKa.ACIDIC)), float(pKa.getpKa(i, pKa.BASIC))
+                    if not np.isnan(a):
+                        apka[i] = a
+                    if not np.isnan(b):
+                        bpka[i] = b
+                res = {'SMILES': smiles, 'acidicValuesByAtom':apka, 'basicValuesByAtom':bpka}
             else:
-                res = (smiles, "pKa calculation failed")
+                res = {'SMILES': smiles, 'error': "pKa calculation failed"}
         except:
-            res = (smiles, "pKa calculation failed")
+            res = {'SMILES': smiles, 'error': "pKa calculation failed"}
         output.append(res)
         
     jpype.shutdownJVM()
-    print('shut down JVM!')
+    # print('shut down JVM!')
     return output
 
 def get_pKa_from_chemaxon(smiles:str, temperature:float) -> Union[dict, None]:
@@ -255,7 +202,7 @@ def get_pKa_from_chemaxon(smiles:str, temperature:float) -> Union[dict, None]:
     
     # get pKa values from chemaxon
     queue = multiprocessing.Queue()
-    func = lambda queue, smiles, temperature: queue.put(_batch_get_pKa_from_chemaxon([smiles], temperature))
+    func = lambda queue, smiles, temperature: queue.put(_batch_get_pKa_using_chemaxon_java([smiles], temperature))
     p = multiprocessing.Process(target=func, args=(queue, smiles, temperature, ))
     p.start()
     p.join()
@@ -265,27 +212,27 @@ def get_pKa_from_chemaxon(smiles:str, temperature:float) -> Union[dict, None]:
         print(smiles, pKa)
         return None
     elif isinstance(pKa, dict):
-        pKa_json = read_pKa_json()
-        pKa_json[smiles] = {**pKa_json.get(smiles, {}), **{str(temperature): pKa}}
-        write_pKa_json(pKa_json)
         return pKa
     else:
         raise Exception(f"Unknown error, return value: {pKa}")
 
-def batch_calculation_pKa_to_json(smiles_list:list, temperature:float) -> None:
+
+def batch_get_pKa_from_chemaxon(smiles:Union[str, List[str]], temperature:float, batch_size:int = 100) -> Union[dict, None]:
     """
-    Batch get pKa values from ChemAxon's Calculator plugins (license required) and save to local files (.json.gz).
+    Get pKa values for a single SMILES from ChemAxon's Calculator plugins (license required).
 
     Parameters
     ----------
-    smiles_list: list of string
-        A list of SMILES string of compounds.
-    temperature: float, optional
+    smiles : string or list of strings
+        A SMILES string of the compound or a list of that.
+    temperature : float, optional
         Temperature in Kelvin.
+    batch_size : int, optional
+        Number of SMILES per batch (default=100).
 
     Returns
     -------
-    output: list of dict
+    output: dict
     
     Raises
     ------
@@ -293,108 +240,214 @@ def batch_calculation_pKa_to_json(smiles_list:list, temperature:float) -> None:
         If ChemAxon jar files not found.
     NoLicenseError :
         If ChemAxon license not found.
-    """ 
-    
+
+    """
+    # check if ChemAxon jar files exist
     if not os.path.isdir(chemaxon_jar_dir):
         raise FileNotFoundError("ChemAxon jar files not found")
-
+    # check if ChemAxon license file exist
     if not os.path.isfile(chemaxon_license_file_path):
         raise NoLicenseError("ChemAxon license not found")
     
-    if not isinstance(smiles_list, list):
-        raise InputValueError("batch_calculation_pKa_to_json(), smiles must be a list")
-    queue = multiprocessing.Manager().Queue()
-    func = lambda queue, smiles_list, temperature: queue.put(_batch_get_pKa_from_chemaxon(smiles_list, temperature))
-    p = multiprocessing.Process(target=func, args=(queue, smiles_list, temperature, ))
-    p.start()
-    p.join()
-    print('ChemAxon pKa calculation finished')
+    # check if smiles is a string or a list of strings
+    if isinstance(smiles, str):
+        smiles_list = [smiles]
+    elif isinstance(smiles, list):
+        if all(isinstance(i, str) for i in smiles):
+            smiles_list = smiles
+        else:
+            raise InputValueError("get_pKa_from_chemaxon(smiles:str, temperature:float=default_T), smiles must be a string or a list of strings")
+    else:
+        raise InputValueError("get_pKa_from_chemaxon(smiles:str, temperature:float=default_T), smiles must be a string or a list of strings")
+    
+    # Split into batches
+    batches = []
+    for i in range(0, len(smiles_list), batch_size):
+        batches.append(smiles_list[i:i + batch_size])
+    
+    total_smiles = len(smiles_list)
+    all_results = []
+    
+    # Use tqdm to show progress by SMILES count
+    with tqdm(total=total_smiles, desc='Calculating pKa values using ChemAxon Java API', unit="smiles") as pbar:
+        for batch in batches:
 
-    pKa_list = queue.get()
-    if pKa_list[0] == "ChemAxon license not found":
-        raise NoLicenseError("ChemAxon license not found")
+            # get pKa values from chemaxon
+            queue = multiprocessing.Queue()
+            func = lambda queue, smiles_list, temperature: queue.put(_batch_get_pKa_using_chemaxon_java(smiles_list, temperature))
+            p = multiprocessing.Process(target=func, args=(queue, batch, temperature, ))
+            p.start()
+            p.join(timeout=300)  # 5 minutes timeout
+            
+            if p.is_alive():
+                p.terminate()
+                p.join()
+                print(f"⚠️ Batch timeout ({len(batch)} SMILES)")
+                pbar.update(len(batch))
+                continue
+            try:
+                batch_results = queue.get(timeout=10)
+                all_results.extend(batch_results)
+                pbar.update(len(batch))
+            except Exception as e:
+                print(f"❌ Batch failed: {e}")
+                pbar.update(len(batch))
+                
+    return all_results
     
-    # Read existing json file as data
-    data = read_pKa_json()
-    
-    assert len(smiles_list) == len(pKa_list)
-    for smiles, pka in pKa_list:
-        if pka != "pKa calculation failed":
-            smiles_data = data.get(smiles, {})
-            smiles_data[str(temperature)] = pka
-            data[smiles] = smiles_data
-    
-    # Write data to json file
-    write_pKa_json(data)
-    return None
 
-def get_pKa_from_json(smiles:str, temperature:float) -> Union[dict, None]:
+def save_pka_to_db(pka_list):
+    with sqlite3.connect(chemaxon_pka_db_path) as conn:
+        cur = conn.cursor()
+
+        # 1️⃣ 建表（只关心结构）
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS pKa (
+            SMILES TEXT PRIMARY KEY,
+            acidicValuesByAtom TEXT,
+            basicValuesByAtom TEXT
+        )
+        """)
+
+        # 2️⃣ 准备批量数据
+        records = [
+            (
+                d["SMILES"],
+                json.dumps(d["acidicValuesByAtom"]),
+                json.dumps(d["basicValuesByAtom"]),
+            )
+            for d in pka_list
+        ]
+
+        # 3️⃣ 批量写入（主流写法）
+        cur.executemany(
+            """
+            INSERT OR REPLACE INTO pKa (SMILES, acidicValuesByAtom, basicValuesByAtom)
+            VALUES (?, ?, ?)
+            """,
+            records
+        )
+
+        # 4️⃣ 显式提交（心里有底）
+        conn.commit()
+
+
+def load_pka_by_smiles(smiles: str, temperature: float = default_T) -> Union[dict, None]:
+    if temperature != default_T:
+        raise NotImplementedError("Only default temperature is supported")
+    
+    with sqlite3.connect(chemaxon_pka_db_path) as conn:
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT acidicValuesByAtom, basicValuesByAtom
+            FROM pKa
+            WHERE SMILES = ?
+        """, (smiles,))
+
+        row = cur.fetchone()
+        if row is not None:
+            acidic = [{'atomIndex': int(k), 'value': v} for k, v in json.loads(row[0]).items()]
+            basic = [{'atomIndex': int(k), 'value': v} for k, v in json.loads(row[1]).items()]
+            return {
+                "acidicValuesByAtom": acidic,
+                "basicValuesByAtom": basic,
+            }
+        else:
+            return None
+
+
+def batch_predict_and_save_pka(
+    smiles: Union[str, List[str]], 
+    temperature: float = default_T,
+    recalc_existing: bool = False
+) -> List[dict]:
     """
-    Get pKa values for a single SMILES from local files (.json.gz).
-
+    批量预测 pKa 并保存到数据库
+    
     Parameters
     ----------
-    smiles : string
-        A SMILES string of the compound.
-    temperature : float, optional
-        Temperature in Kelvin.
-
-    Returns
-    -------
-    dict
-    """
-    # 
-    pKa_json = read_pKa_json()
-    if str(temperature) in pKa_json.get(smiles, {}).keys():
-        return deepcopy(pKa_json[smiles][str(temperature)])
-    else:
-        print(f'{smiles}, {temperature} K pKa not in file')
-        #batch_calculation_pKa_to_json([smiles], temperature)
-        return None
-
-def check_pKa_json(smiles_list:list, temperature:float, predict:bool=True) -> List[str]:
-    """
-    Check if pKa values for a list of SMILES are in local .json file.  
-    If predict is True, calculate pKa for them and save to local .json file.
-
-    Parameters
-    ----------
-    smiles_list : list of string
-        A list of SMILES strings of the compounds.
-    temperature : float, optional
-        Temperature in Kelvin.
-    predict : bool, optional
-        If True, calculate pKa for the compounds not in the .json file.
-
-    Returns
-    -------
-    list : list of SMILES strings of the compounds not in the .json file.
-    """
-    not_in_list = []
-    pKa_json = read_pKa_json()
-    for smiles in smiles_list:
-        if isinstance(smiles, str) and (str(temperature) not in pKa_json.get(smiles, {}).keys()):
-            not_in_list.append(smiles)
-    print(f'{len(not_in_list)} SMILES not in file')
+    smiles : str or List[str]
+        单个 SMILES 或 SMILES 列表
+    temperature : float
+        温度（Kelvin）
+    recalc_existing : bool, default=False
+        是否重新预测已存在于数据库中的分子
     
-    if len(not_in_list) == 0:
-        pass
-    elif predict is True:
-        try:
-            batch_calculation_pKa_to_json(not_in_list, temperature)
-        except:
-            pass
+    Returns
+    -------
+    List[dict]
+        成功预测的 pKa 数据列表
+    """
+    # 1️⃣ 处理输入 SMILES
+    if isinstance(smiles, str):
+        smiles_list = [smiles]
+    elif isinstance(smiles, list):
+        if all(isinstance(i, str) for i in smiles):
+            smiles_list = smiles
+        else:
+            raise InputValueError("smiles must be a string or a list of strings")
     else:
-        pass
-    return not_in_list
-
+        raise InputValueError("smiles must be a string or a list of strings")
+    
+    # 2️⃣ 检查数据库中已存在的分子
+    existing_smiles = set()
+    if os.path.isfile(chemaxon_pka_db_path):
+        with sqlite3.connect(chemaxon_pka_db_path) as conn:
+            cur = conn.cursor()
+            placeholders = ','.join(['?'] * len(smiles_list))
+            cur.execute(f"SELECT SMILES FROM pKa WHERE SMILES IN ({placeholders})", smiles_list)
+            existing_smiles = {row[0] for row in cur.fetchall()}
+    
+    # 3️⃣ 决定要预测的 SMILES
+    if recalc_existing:
+        # 重新预测所有分子
+        to_predict = smiles_list
+        print(f"🔄 将重新预测所有 {len(to_predict)} 个分子（包括已存在的）")
+    else:
+        # 只预测不存在的分子
+        to_predict = [smi for smi in smiles_list if smi not in existing_smiles]
+        print(f"📊 数据库中已存在 {len(existing_smiles)} 个分子，将预测 {len(to_predict)} 个新分子")
+    
+    if not to_predict:
+        print("✅ 所有分子都已存在于数据库中，无需预测")
+        return []
+    
+    # 4️⃣ 批量预测 pKa
+    try:
+        pka_results = []
+        for pka in batch_get_pKa_from_chemaxon(to_predict, temperature):
+            if 'error' in pka:
+                print(f"❌ 预测失败: {pka['error']}")
+            else:
+                pka_results.append(pka)
+    except (FileNotFoundError, NoLicenseError, InputValueError) as e:
+        print(f"❌ 预测失败: {e}")
+        return []
+    
+    if not pka_results:
+        print("⚠️ 没有获取到 pKa 数据")
+        return []
+    
+    # 5️⃣ 保存到数据库
+    try:
+        save_pka_to_db(pka_results)
+        print(f"✅ 成功保存 {len(pka_results)} 个分子的 pKa 数据")
+        return pka_results
+    except Exception as e:
+        print(f"❌ 保存到数据库失败: {e}")
+        return []
 
 
 def get_pKa_methods():
     methods = {}
     # if pka json file exists, add method to get pka from json file
-    if os.path.isfile(chemaxon_pka_json_path) or os.path.isfile(chemaxon_pka_json_path.removesuffix(".gz")):
-        methods['chemaxon_pKa_json'] = get_pKa_from_json
+    # if os.path.isfile(chemaxon_pka_json_path) or os.path.isfile(chemaxon_pka_json_path.removesuffix(".gz")):
+    #     methods['chemaxon_pKa_json'] = get_pKa_from_json
+
+    # if pka db file exists, add method to get pka from db file
+    if os.path.isfile(chemaxon_pka_db_path):
+        methods['chemaxon_pKa_db'] = load_pka_by_smiles
 
     # if chemaxon jar files and license file exist, add method to get pka from chemaxon
     if os.path.isdir(chemaxon_jar_dir) and os.path.isfile(chemaxon_license_file_path):
@@ -405,9 +458,7 @@ def get_pKa_methods():
     return methods
 
 
-
-
-def get_pKa(smiles:str, temperature, source:Union[str, List[str]]='auto') -> dict:
+def get_pKa(smiles: str, temperature: float = default_T, source: Union[str, List[str]] = 'auto') -> dict:
     """
     Get pKa values for a single SMILES.
 
