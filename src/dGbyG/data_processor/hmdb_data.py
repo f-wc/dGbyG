@@ -5,7 +5,7 @@ import pandas as pd
 from io import BytesIO, StringIO
 from rdkit import Chem
 
-from ..utils.config import config
+from ..config import config
 
 def raw_file_to_csv(zip_file='structures.zip'):
     """

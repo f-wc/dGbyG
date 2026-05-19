@@ -3,7 +3,7 @@ import gzip
 import pandas as pd
 from io import StringIO
 
-from ..utils.config import config
+from ..config import config
 
 
 def raw_file_to_csv(file='structures.tsv.gz'):

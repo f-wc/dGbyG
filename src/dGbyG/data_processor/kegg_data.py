@@ -5,7 +5,7 @@ from typing import Dict, List
 from Bio.KEGG import REST
 #import Bio.KEGG.Compound
 
-from ..utils.config import config
+from ..config import config
 
 
 
