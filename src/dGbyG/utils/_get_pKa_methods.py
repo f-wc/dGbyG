@@ -18,38 +18,16 @@ import numpy as np
 from copy import deepcopy
 from typing import List, Union, Iterable
 from tqdm import tqdm
+from pathlib import Path
 
 from ._custom_error import NoLicenseError, InputValueError
-from ..__init__ import default_T
+from ..constants import default_T
+from ..config import config
 
+_CHEMAXON_AVAILABLE = None  # Cached flag indicating whether ChemAxon is available.
+chemaxon_jar_dir: Path|str|None = None
+chemaxon_license_file_path: Path|str|None = None
 
-# Path settings
-chemaxon_pka_db_path = os.path.join(__file__.split('src')[0], 'data', 'chemaxon_pka.db')
-
-# set chemaxon_jar_dir
-if shutil.which('cxcalc'):
-    cxcalc_path = shutil.which('cxcalc')
-    cxcalc_path = os.path.realpath(cxcalc_path) if os.path.islink(cxcalc_path) else cxcalc_path
-    chemaxon_jar_dir = os.path.join(os.path.dirname(os.path.dirname(cxcalc_path)), 'lib')
-else:
-    chemaxon_jar_dir = ''
-
-# set chemaxon_license_file_path, refer to https://docs.chemaxon.com/display/lts-iodine/license-installation.md
-if os.environ.get("CHEMAXON_LICENSE_URL"):
-    chemaxon_license_file_path = os.environ.get("CHEMAXON_LICENSE_URL")
-elif os.environ.get("CHEMAXON_HOME"): # <ChemAxon_home> can be set by the CHEMAXON_HOME environment variable
-    chemaxon_home = os.environ.get("CHEMAXON_HOME")
-    chemaxon_license_file_path = os.path.join(chemaxon_home, "license.cxl") # The default location is <ChemAxon_home>/license.cxl or <ChemAxon_home>/licenses/ folder. 
-else:
-    user_home = os.environ.get("HOME")
-    if os.name == 'posix':
-        chemaxon_home = os.path.join(user_home, ".chemaxon") # <User_home>/.chemaxon (on Unix-like systems)
-        chemaxon_license_file_path = os.path.join(chemaxon_home, "license.cxl")
-    elif os.name == 'nt':
-        chemaxon_home = os.path.join(user_home, "chemaxon") # <User_home>/chemaxon (on Windows)
-        chemaxon_license_file_path = os.path.join(chemaxon_home, "license.cxl")
-    else:
-        chemaxon_license_file_path = ''
 
 
 def get_pKa_from_chemaxon_rest(smiles:str, temperature:float) -> dict:
@@ -95,6 +73,98 @@ def get_pKa_from_chemaxon_rest(smiles:str, temperature:float) -> dict:
     return pka
 
 
+
+def check_license():
+    jpype.startJVM(f'-Dchemaxon.license.url={chemaxon_license_file_path}', '-Djava.util.logging.level=SEVERE')
+    for p in chemaxon_jar_dir.iterdir():
+        jpype.addClassPath(p)
+    isLicensed = jpype.JClass('chemaxon.marvin.calculations.pKaPlugin')().isLicensed()
+    jpype.shutdownJVM()
+    return isLicensed
+
+
+def is_chemaxon_java_available():
+    """
+    Check if ChemAxon Java plugins are available and licensed.
+
+    On first call, this function locates the ChemAxon jar directory and license file
+    by examining the environment (``cxcalc`` in PATH, ``CHEMAXON_LICENSE_URL``,
+    ``CHEMAXON_HOME``, user home). It then starts the JVM, loads the pKa plugin
+    and verifies the license. The result (``True`` or ``False``) is cached in a
+    module-level variable ``_CHEMAXON_AVAILABLE`` and returned on subsequent calls
+    without repeating the expensive checks.
+
+    Note
+    ----
+    This function reads and **sets** the following global variables in the module:
+        - ``_CHEMAXON_AVAILABLE``  (bool or None)    - cached availability flag
+        - ``chemaxon_jar_dir``      (str or Path)    - directory containing jar files
+        - ``chemaxon_license_file_path`` (str or Path)     - path to the ChemAxon license file
+
+    Returns
+    -------
+    bool
+        ``True`` if the ChemAxon Java environment is ready to use, ``False`` otherwise.
+
+    Raises
+    ------
+    ValueError
+        If the internal cache ``_CHEMAXON_AVAILABLE`` is in an unexpected state
+        (not ``None``, ``True`` or ``False``).
+    """
+    global _CHEMAXON_AVAILABLE
+
+    # --- 1. Return cached result if already determined ---
+    if (_CHEMAXON_AVAILABLE is True) or (_CHEMAXON_AVAILABLE is False):
+        return _CHEMAXON_AVAILABLE
+
+    # --- 2. First call: locate ChemAxon installation ---
+    elif _CHEMAXON_AVAILABLE is None:
+        # --- 2a. Locate jar directory via cxcalc ---
+        global chemaxon_jar_dir
+        if shutil.which('cxcalc'):
+            cxcalc_path = shutil.which('cxcalc')
+            # chemaxon_jar_dir is set to the 'lib' directory next to the cxcalc parent
+            chemaxon_jar_dir = Path(cxcalc_path).resolve(strict=False).parent.parent / 'lib'
+        else:
+            chemaxon_jar_dir = ''
+
+        # --- 2b. Locate license file following ChemAxon conventions ---
+        # See https://docs.chemaxon.com/display/lts-iodine/license-installation.md
+        global chemaxon_license_file_path
+        if os.environ.get("CHEMAXON_LICENSE_URL"):
+            chemaxon_license_file_path = Path(os.environ.get("CHEMAXON_LICENSE_URL"))
+        elif os.environ.get("CHEMAXON_HOME"):
+            # <ChemAxon_home> can be set by the CHEMAXON_HOME environment variable
+            chemaxon_home = Path(os.environ.get("CHEMAXON_HOME"))
+            # The default location is <ChemAxon_home>/license.cxl or <ChemAxon_home>/licenses/
+            chemaxon_license_file_path = chemaxon_home / "license.cxl"
+        else:
+            user_home = Path(os.environ.get("HOME"))
+            if os.name == 'posix':
+                # <User_home>/.chemaxon on Unix-like systems
+                chemaxon_license_file_path = user_home / ".chemaxon" / "license.cxl"
+            elif os.name == 'nt':
+                # <User_home>/chemaxon on Windows
+                chemaxon_license_file_path = user_home / "chemaxon" / "license.cxl"
+            else:
+                chemaxon_license_file_path = ''
+
+        # --- 2c. Perform the actual JVM‑based license check ---
+        if not (os.path.isdir(chemaxon_jar_dir) and os.path.isfile(chemaxon_license_file_path)):
+            _CHEMAXON_AVAILABLE = False
+        else:
+            try:
+                _CHEMAXON_AVAILABLE = multiprocessing.Pool(1).apply(check_license, ())
+            except:
+                _CHEMAXON_AVAILABLE = False
+        return _CHEMAXON_AVAILABLE
+
+    # --- 3. Unexpected cache state ---
+    else:
+        raise ValueError("Error in checking ChemAxon Java availability")
+
+
 def _batch_get_pKa_using_chemaxon_java(smiles_list:List[str], temperature:float) -> List[str|dict]:
     """
     Get pKa values for a list of SMILES from ChemAxon's Calculator plugins (license required).
@@ -120,23 +190,22 @@ def _batch_get_pKa_using_chemaxon_java(smiles_list:List[str], temperature:float)
 
     if not os.path.isdir(chemaxon_jar_dir):
         raise FileNotFoundError("ChemAxon jar files not found")
-    else:
-        jar_dir = chemaxon_jar_dir
-        fileList = [os.path.join(jar_dir,i)  for i in os.listdir(jar_dir)]
-
-    if not os.path.isfile(chemaxon_license_file_path):
+    elif not os.path.isfile(chemaxon_license_file_path):
         raise NoLicenseError("ChemAxon license not found")
     else:
-        jpype.startJVM(f'-Dchemaxon.license.url={chemaxon_license_file_path}')
-        
-    for p in fileList:
+        pass
+    
+    # 
+    jpype.startJVM(f'-Dchemaxon.license.url={chemaxon_license_file_path}', '-Djava.util.logging.level=SEVERE')
+    for p in chemaxon_jar_dir.iterdir():
         jpype.addClassPath(p)
 
     MolImporter = jpype.JClass('chemaxon.formats.MolImporter')
     pKaPlugin = jpype.JClass('chemaxon.marvin.calculations.pKaPlugin')
     pKa = pKaPlugin()
     if not pKa.isLicensed():
-        return ["ChemAxon license not found"]
+        jpype.shutdownJVM()
+        raise NoLicenseError("ChemAxon license not found")
     
     output = []
     pKa.setTemperature(temperature)
@@ -158,9 +227,9 @@ def _batch_get_pKa_using_chemaxon_java(smiles_list:List[str], temperature:float)
                         bpka[i] = b
                 res = {'SMILES': smiles, 'acidicValuesByAtom':apka, 'basicValuesByAtom':bpka}
             else:
-                res = {'SMILES': smiles, 'error': "pKa calculation failed"}
+                res = {'SMILES': smiles, 'acidicValuesByAtom':None, 'basicValuesByAtom':None}
         except:
-            res = {'SMILES': smiles, 'error': "pKa calculation failed"}
+            res = {'SMILES': smiles, 'acidicValuesByAtom':None, 'basicValuesByAtom':None}
         output.append(res)
         
     jpype.shutdownJVM()
@@ -190,12 +259,10 @@ def get_pKa_from_chemaxon(smiles:str, temperature:float) -> Union[dict, None]:
         If ChemAxon license not found.
 
     """
-    # check if ChemAxon jar files exist
-    if not os.path.isdir(chemaxon_jar_dir):
-        raise FileNotFoundError("ChemAxon jar files not found")
-    # check if ChemAxon license file exist
-    if not os.path.isfile(chemaxon_license_file_path):
-        raise NoLicenseError("ChemAxon license not found")
+    # check if ChemAxon available
+    if not is_chemaxon_java_available():
+        raise RuntimeError("ChemAxon Java not available")
+    
     # check if smiles is a string
     if not isinstance(smiles, str):
         raise InputValueError("get_pKa_from_chemaxon(smiles:str, temperature:float=default_T), smiles must be a string")
@@ -206,10 +273,9 @@ def get_pKa_from_chemaxon(smiles:str, temperature:float) -> Union[dict, None]:
     p = multiprocessing.Process(target=func, args=(queue, smiles, temperature, ))
     p.start()
     p.join()
-    _, pKa = queue.get()[0]
+    pKa = queue.get()[0]
     
-    if pKa == "pKa calculation failed":
-        print(smiles, pKa)
+    if (pKa['acidicValuesByAtom'] is None) and (pKa['basicValuesByAtom'] is None):
         return None
     elif isinstance(pKa, dict):
         return pKa
@@ -242,12 +308,9 @@ def batch_get_pKa_from_chemaxon(smiles:Union[str, List[str]], temperature:float,
         If ChemAxon license not found.
 
     """
-    # check if ChemAxon jar files exist
-    if not os.path.isdir(chemaxon_jar_dir):
-        raise FileNotFoundError("ChemAxon jar files not found")
-    # check if ChemAxon license file exist
-    if not os.path.isfile(chemaxon_license_file_path):
-        raise NoLicenseError("ChemAxon license not found")
+    # check if ChemAxon available
+    if not is_chemaxon_java_available():
+        raise RuntimeError("ChemAxon Java not available")
     
     # check if smiles is a string or a list of strings
     if isinstance(smiles, str):
@@ -297,10 +360,20 @@ def batch_get_pKa_from_chemaxon(smiles:Union[str, List[str]], temperature:float,
     
 
 def save_pka_to_db(pka_list):
-    with sqlite3.connect(chemaxon_pka_db_path) as conn:
+    """
+    Persist a list of pKa records into the SQLite database.
+    
+    Parameters
+    ----------
+    pka_list : list of dict
+        Each dict must contain the keys "SMILES", "acidicValuesByAtom",
+        and "basicValuesByAtom". The acidic/basic values are expected to
+        be dictionaries (or None) and will be serialized to JSON strings.
+    """
+    with sqlite3.connect(config.chemaxon_pka_db_path) as conn:
         cur = conn.cursor()
 
-        # 1️⃣ 建表（只关心结构）
+        # 1. Ensure the table exists (creates it if missing)
         cur.execute("""
         CREATE TABLE IF NOT EXISTS pKa (
             SMILES TEXT PRIMARY KEY,
@@ -309,7 +382,7 @@ def save_pka_to_db(pka_list):
         )
         """)
 
-        # 2️⃣ 准备批量数据
+        # 2. Prepare batch data: serialize atom-value dicts to JSON
         records = [
             (
                 d["SMILES"],
@@ -319,7 +392,7 @@ def save_pka_to_db(pka_list):
             for d in pka_list
         ]
 
-        # 3️⃣ 批量写入（主流写法）
+        # 3. Bulk upsert – INSERT OR REPLACE handles existing SMILES
         cur.executemany(
             """
             INSERT OR REPLACE INTO pKa (SMILES, acidicValuesByAtom, basicValuesByAtom)
@@ -328,15 +401,16 @@ def save_pka_to_db(pka_list):
             records
         )
 
-        # 4️⃣ 显式提交（心里有底）
-        conn.commit()
+    # 4. Close the database connection to release resources
+    conn.close()
+    return
 
 
 def load_pka_by_smiles(smiles: str, temperature: float = default_T) -> Union[dict, None]:
     if temperature != default_T:
         raise NotImplementedError("Only default temperature is supported")
     
-    with sqlite3.connect(chemaxon_pka_db_path) as conn:
+    with sqlite3.connect(config.chemaxon_pka_db_path) as conn:
         cur = conn.cursor()
 
         cur.execute("""
@@ -347,39 +421,67 @@ def load_pka_by_smiles(smiles: str, temperature: float = default_T) -> Union[dic
 
         row = cur.fetchone()
         if row is not None:
-            acidic = [{'atomIndex': int(k), 'value': v} for k, v in json.loads(row[0]).items()]
-            basic = [{'atomIndex': int(k), 'value': v} for k, v in json.loads(row[1]).items()]
-            return {
-                "acidicValuesByAtom": acidic,
-                "basicValuesByAtom": basic,
-            }
+            acidic = json.loads(row[0])
+            basic = json.loads(row[1])
+            if (acidic is None) and (basic is None):
+                return None
+            elif (acidic is not None) and (basic is not None):
+                return {
+                    "acidicValuesByAtom": [{'atomIndex': int(k), 'value': v} for k, v in acidic.items()],
+                    "basicValuesByAtom": [{'atomIndex': int(k), 'value': v} for k, v in basic.items()],
+                }
+            else:
+                raise ValueError("Inconsistent data in database: acidicValuesByAtom and basicValuesByAtom should both be None or both be not None")
         else:
             return None
 
 
 def batch_predict_and_save_pka(
-    smiles: Union[str, List[str]], 
+    smiles: Union[str, List[str]],
     temperature: float = default_T,
     recalc_existing: bool = False
 ) -> List[dict]:
     """
-    批量预测 pKa 并保存到数据库
-    
+    Batch predict pKa values for one or more molecules and persist them to the database.
+
+    This function normalizes the input SMILES strings, checks which molecules already exist
+    in the database, and predicts pKa values only for those that are missing (unless
+    ``recalc_existing=True`` forces re‑prediction for all). Predictions are performed via
+    ChemAxon, and the results are saved into a local SQLite database.
+
     Parameters
     ----------
-    smiles : str or List[str]
-        单个 SMILES 或 SMILES 列表
-    temperature : float
-        温度（Kelvin）
-    recalc_existing : bool, default=False
-        是否重新预测已存在于数据库中的分子
-    
+    smiles : str or list of str
+        A single SMILES string or a list of SMILES strings representing the molecules.
+    temperature : float, optional
+        Temperature in Kelvin at which the pKa values are calculated.
+        Defaults to ``default_T`` (module‑level constant).
+    recalc_existing : bool, optional
+        If ``False`` (default), only molecules not already present in the database are
+        processed. If ``True``, all given molecules are re‑predicted, regardless of whether
+        they already exist in the database. Note that re‑prediction may lead to duplicate
+        entries or overwrites depending on the implementation of ``save_pka_to_db``.
+
     Returns
     -------
-    List[dict]
-        成功预测的 pKa 数据列表
+    list of dict
+        A list of dictionaries containing the successfully predicted and saved pKa data.
+        Each dictionary typically includes the SMILES string, acidic dissociation values
+        per atom, and basic dissociation values per atom. Returns an empty list if
+        prediction fails or if no new predictions are needed.
+
+    Raises
+    ------
+    RuntimeError
+        If the ChemAxon Java environment is not available (raised by
+        ``is_chemaxon_java_available()`` or later when prediction is attempted).
+    InputValueError
+        If the ``smiles`` argument is neither a string nor a list of strings, or if any
+        element of the list is not a string.
     """
-    # 1️⃣ 处理输入 SMILES
+    # ------------------------------------------------------------------
+    # 1. Normalize input: convert single string to a list of strings
+    # ------------------------------------------------------------------
     if isinstance(smiles, str):
         smiles_list = [smiles]
     elif isinstance(smiles, list):
@@ -389,72 +491,85 @@ def batch_predict_and_save_pka(
             raise InputValueError("smiles must be a string or a list of strings")
     else:
         raise InputValueError("smiles must be a string or a list of strings")
-    
-    # 2️⃣ 检查数据库中已存在的分子
+
+    # ------------------------------------------------------------------
+    # 2. Query the database to find which SMILES already have pKa data
+    # ------------------------------------------------------------------
     existing_smiles = set()
-    if os.path.isfile(chemaxon_pka_db_path):
-        with sqlite3.connect(chemaxon_pka_db_path) as conn:
+    if os.path.isfile(config.chemaxon_pka_db_path):
+        with sqlite3.connect(config.chemaxon_pka_db_path) as conn:
             cur = conn.cursor()
             placeholders = ','.join(['?'] * len(smiles_list))
             cur.execute(f"SELECT SMILES FROM pKa WHERE SMILES IN ({placeholders})", smiles_list)
             existing_smiles = {row[0] for row in cur.fetchall()}
-    
-    # 3️⃣ 决定要预测的 SMILES
+
+    # ------------------------------------------------------------------
+    # 3. Decide which molecules need to be predicted
+    # ------------------------------------------------------------------
     if recalc_existing:
-        # 重新预测所有分子
+        # Force prediction for all given molecules, even if they already exist in the DB
         to_predict = smiles_list
-        print(f"🔄 将重新预测所有 {len(to_predict)} 个分子（包括已存在的）")
+        print(f"🔄 Re-predicting pKa for all {len(to_predict)} molecules (including those already in the database)")
     else:
-        # 只预测不存在的分子
+        # Predict only those that are not yet stored
         to_predict = [smi for smi in smiles_list if smi not in existing_smiles]
-        print(f"📊 数据库中已存在 {len(existing_smiles)} 个分子，将预测 {len(to_predict)} 个新分子")
-    
-    if not to_predict:
-        print("✅ 所有分子都已存在于数据库中，无需预测")
+
+    # ------------------------------------------------------------------
+    # 4. Run batch prediction via ChemAxon (if needed and available)
+    # ------------------------------------------------------------------
+    if is_chemaxon_java_available() and to_predict:
+        print("---------- ChemAxon pKa plugin is available ----------")
+        # NOTE: The following print statement can be misleading when recalc_existing=True
+        # because it says "new ones" but actually predicts all molecules.
+        print(f"📊 {len(existing_smiles)} molecules already exist in the pKa database. Predicting {len(to_predict)} new ones.")
+        try:
+            pka_results = list(batch_get_pKa_from_chemaxon(to_predict, temperature))
+        except (FileNotFoundError, NoLicenseError, InputValueError) as e:
+            print(f"❌ Prediction failed: {e}")
+            return []
+    elif not to_predict:
+        print("✅ All molecules exist in the pKa database — skipping prediction.")
         return []
-    
-    # 4️⃣ 批量预测 pKa
-    try:
-        pka_results = []
-        for pka in batch_get_pKa_from_chemaxon(to_predict, temperature):
-            if 'error' in pka:
-                print(f"❌ 预测失败: {pka['error']}")
-            else:
-                pka_results.append(pka)
-    except (FileNotFoundError, NoLicenseError, InputValueError) as e:
-        print(f"❌ 预测失败: {e}")
+    elif not is_chemaxon_java_available():
+        print("❌ ChemAxon Java environment is not available — skipping prediction.")
         return []
-    
+    else:
+        return []
+
+    # ------------------------------------------------------------------
+    # 5. Save the successfully predicted results into the database
+    # ------------------------------------------------------------------
     if not pka_results:
-        print("⚠️ 没有获取到 pKa 数据")
+        print("-------------- No pKa data was obtained --------------")
         return []
-    
-    # 5️⃣ 保存到数据库
-    try:
+    else:
         save_pka_to_db(pka_results)
-        print(f"✅ 成功保存 {len(pka_results)} 个分子的 pKa 数据")
+        print("-------- pKa data has been saved successfully --------")
         return pka_results
-    except Exception as e:
-        print(f"❌ 保存到数据库失败: {e}")
-        return []
 
 
 def get_pKa_methods():
-    methods = {}
-    # if pka json file exists, add method to get pka from json file
-    # if os.path.isfile(chemaxon_pka_json_path) or os.path.isfile(chemaxon_pka_json_path.removesuffix(".gz")):
-    #     methods['chemaxon_pKa_json'] = get_pKa_from_json
+    """Return a dict of available pKa prediction methods based on current environment.
 
-    # if pka db file exists, add method to get pka from db file
-    if os.path.isfile(chemaxon_pka_db_path):
+    Checks for local ChemAxon database files and Java plugin availability to
+    dynamically build a mapping from method name to callable.
+
+    Returns:
+        dict: Mapping of method key (str) to the corresponding function.
+    """
+    methods = {}
+
+    # Use the local ChemAxon pKa database if the file is present.
+    if os.path.isfile(config.chemaxon_pka_db_path):
         methods['chemaxon_pKa_db'] = load_pka_by_smiles
 
-    # if chemaxon jar files and license file exist, add method to get pka from chemaxon
-    if os.path.isdir(chemaxon_jar_dir) and os.path.isfile(chemaxon_license_file_path):
+    # Use the ChemAxon Java plugin if available.
+    if is_chemaxon_java_available():
         methods['chemaxon'] = get_pKa_from_chemaxon
 
-    # 
+    # ChemAxon REST API is always available as a fallback/primary option.
     methods['chemaxon_rest'] = get_pKa_from_chemaxon_rest
+
     return methods
 
 
