@@ -1,7 +1,7 @@
 import math
 import numpy as np
 
-from .. import R, FARADAY, default_T, default_pH, default_I, default_pMg, default_e_potential
+from ..constants import R, FARADAY, default_T, default_pH, default_I, default_pMg, default_e_potential
 
 standard_formation_dgf_H = 0
 standard_formation_dg_Mg = -455.3

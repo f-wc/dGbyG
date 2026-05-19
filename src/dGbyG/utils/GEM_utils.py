@@ -3,7 +3,7 @@ import functools
 import cobra
 import pandas as pd
 
-from .. import default_T, default_I, default_pMg, default_pH, default_e_potential
+from ..constants import default_T, default_I, default_pMg, default_pH, default_e_potential
 
 
 
