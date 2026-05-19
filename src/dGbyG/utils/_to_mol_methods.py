@@ -1,10 +1,12 @@
 # This file contains methods to convert different identifiers to RDKit molecules.
 import os
+import sqlite3
 import requests
 import zipfile
 import pandas as pd
-from typing import Dict, Callable, Union
 import pubchempy as pcp
+from typing import Dict, Callable, Union
+from pathlib import Path
 from Bio import Entrez
 from rdkit import Chem
 from rdkit.Chem import Descriptors
@@ -13,7 +15,7 @@ from rdkit import RDLogger
 RDLogger.DisableLog('rdApp.*')
 
 from ._custom_error import InputValueError
-from .config import config
+from ..config import config
 
 
 # set database paths
@@ -135,12 +137,27 @@ def lipidmaps_id_to_mol(cid:str, sanitize=True) -> Union[Mol, None]:
 
 
 def pubchem_to_mol(cid:str, sanitize=True) -> Union[Mol, None]:
-    cid = str(cid).lower().replace('pubchem:', '')
-    try:
-        comp = pcp.Compound.from_cid(cid)
-        smiles = comp.connectivity_smiles
-    except:
-        smiles = None
+    cid = str(cid).lower().replace('pubchem:', '').strip()
+    
+    db_path = Path(config.pubchem_database_path) / "CID-SMILES.db"
+    table_name = 'pubchem'
+    if db_path.is_file():
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.execute("PRAGMA query_only = ON")
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT SMILES FROM {table_name} WHERE CID = ?", (int(cid),))
+            row = cursor.fetchone()
+            conn.close()
+            smiles = row[0] if row else None
+        except:
+            smiles = None
+    else:
+        try:
+            comp = pcp.Compound.from_cid(cid)
+            smiles = comp.connectivity_smiles
+        except:
+            smiles = None
     
     if smiles:
         mol = smiles_to_mol(smiles, sanitize=sanitize)
