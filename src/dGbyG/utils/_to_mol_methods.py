@@ -43,9 +43,10 @@ def file_to_mol(path:str, sanitize=True) -> Union[Mol, None]:
 
 def kegg_compound_to_mol(entry:str, sanitize=True) -> Union[Mol, None]:
     # load data to cache
-    namelist = [f.stem for f in (config.kegg_database_path / 'mol').glob('*.mol')]
-    filelist = [(config.kegg_database_path / 'mol' / f'{name}.mol') for name in namelist]
-    cache['kegg'] = pd.DataFrame({'cid': namelist, 'file': filelist}).set_index('cid')
+    if 'kegg' not in cache:
+        namelist = [f.stem for f in (config.kegg_database_path / 'mol').glob('*.mol')]
+        filelist = [(config.kegg_database_path / 'mol' / f'{name}.mol') for name in namelist]
+        cache['kegg'] = pd.DataFrame({'cid': namelist, 'file': filelist}).set_index('cid')
     
     # 
     df = cache['kegg']
