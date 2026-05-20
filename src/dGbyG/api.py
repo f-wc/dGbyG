@@ -1,4 +1,5 @@
 import os
+import math
 import cobra
 import base64
 from io import BytesIO
@@ -20,7 +21,7 @@ from .model.datasets import mol_to_graph_data
 from .model.inference import Inference_Model
 from .utils._to_mol_methods import name_to_smiles, to_mol_methods
 from .utils._get_pKa_methods import batch_predict_and_save_pka
-from .constants import default_T, default_pMg, default_pH, default_I, default_e_potential, default_condition
+from .constants import default_T, default_pMg, default_pH, default_I, default_e_potential, default_condition, R
 
 pKa_source = None
 
@@ -62,11 +63,13 @@ class Compound(object):
             raise InputValueError(f'Unknown error in Compound.__init__().')
         
         self.compartment = None
-        self._condition = default_condition.copy()
+        self._concentration = 1
         self._l_concentration = None
         self._u_concentration = None
+        self._z = 0
         self._lz = None
         self._uz = None
+        self._condition = default_condition.copy()
 
         self.pKa_source = None
 
@@ -113,12 +116,23 @@ class Compound(object):
                     raise InputValueError(f'The value of {k} must be a float or int, but got {type(condition[k])}.')
 
     @property
+    def z(self) -> float:
+        return self._z
+    @z.setter
+    def z(self, z:float):
+        self._z = z
+        self._concentration = 10 ** self._z
+
+    @property
     def uz(self) -> float:
         return self._uz
     @uz.setter
     def uz(self, uz:float):
-        self._uz = uz
-        self._u_concentration = 10 ** uz
+        if self.Smiles in ['[H+]', '[1H+]']:
+            self._uz = -self.condition['pH']
+        else:
+            self._uz = uz
+            self._u_concentration = 10 ** uz
     
     @property
     def lz(self) -> float:
@@ -129,12 +143,23 @@ class Compound(object):
         self._l_concentration = 10 ** lz
 
     @property
+    def concentration(self) -> float:
+        return self._concentration
+    @concentration.setter
+    def concentration(self, concentration:float):
+        self._concentration = concentration
+        self._z = np.log10(self._concentration)
+
+    @property
     def u_concentration(self) -> float:
         return self._u_concentration
     @u_concentration.setter
     def u_concentration(self, concentration:float):
-        self._u_concentration = concentration
-        self._uz = np.log10(concentration)
+        if self.Smiles in ['[H+]', '[1H+]']:
+            pass
+        else:
+            self._u_concentration = concentration
+            self._uz = np.log10(concentration)
 
     @property
     def l_concentration(self) -> float:
@@ -199,7 +224,7 @@ class Compound(object):
         infer_model = model_cache[infer_model_path]
 
         # 
-        if self.Smiles == '[H+]':
+        if self.Smiles in ['[H+]', '[1H+]']:
             return np.zeros(infer_model.num_head)
         elif self.mol:
             return infer_model(self.graph_data).squeeze().numpy()
@@ -222,6 +247,15 @@ class Compound(object):
             return transformed_standard_dg, self.standard_dGf_prime[1]
         else:
             return self.standard_dGf_prime
+        
+    @property
+    def transformed_dGf_prime(self) -> Tuple[np.float32, np.float32]:
+        if self.Smiles in ['[H+]', '[1H+]']:
+            real_dGf = self.transformed_standard_dGf_prime[0]
+        else:
+            real_dGf = self.transformed_standard_dGf_prime[0] + default_T * R * math.log(self.concentration)
+        return real_dGf, self.transformed_standard_dGf_prime[1]
+
         
     # ---------------------------------------------------------
     # 1. 字符串显示方法 __str__
@@ -537,6 +571,16 @@ class Reaction(object):
             return transformed_standard_dGr_prime, self.standard_dGr_prime[1]
         else:
             return self.standard_dGr_prime
+        
+    @property
+    def transformed_dGr_prime(self) -> Tuple[np.float32, np.float32]:
+        """
+        Returns
+        -------
+            The tuple of the mean and SD of transformed dG for the reaction.
+        """
+        dGr_prime = sum([comp.transformed_dGf_prime[0] * coeff for comp, coeff in self.reaction.items()])
+        return dGr_prime, self.transformed_standard_dGr_prime[1]
     
     def _build_equation_string(self, eq_sign: str = '=') -> str:
         """
