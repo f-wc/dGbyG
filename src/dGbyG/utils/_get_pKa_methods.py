@@ -274,11 +274,16 @@ def get_pKa_from_chemaxon(smiles:str, temperature:float) -> Union[dict, None]:
     p.start()
     p.join()
     pKa = queue.get()[0]
+    acidic = pKa['acidicValuesByAtom']
+    basic = pKa['basicValuesByAtom']
     
-    if (pKa['acidicValuesByAtom'] is None) and (pKa['basicValuesByAtom'] is None):
+    if (acidic is None) and (basic is None):
         return None
-    elif isinstance(pKa, dict):
-        return pKa
+    elif (acidic is not None) and (basic is not None):
+        return {
+            "acidicValuesByAtom": [{'atomIndex': int(k), 'value': v} for k, v in acidic.items()],
+            "basicValuesByAtom": [{'atomIndex': int(k), 'value': v} for k, v in basic.items()],
+        }
     else:
         raise Exception(f"Unknown error, return value: {pKa}")
 
@@ -622,8 +627,4 @@ def get_pKa(smiles: str, temperature: float = default_T, source: Union[str, List
     if pKa is None:
         return None
     else:
-        for xpKa in pKa.values():
-            for atom_pKa in xpKa.copy():
-                if np.isnan(atom_pKa['value']):
-                    xpKa.remove(atom_pKa)
         return pKa
