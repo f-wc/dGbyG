@@ -821,9 +821,9 @@ def predict_transformed_dG_prime_for_GEM(
     # ------------------------------------------------------------------
     Data = {}
     for met in tqdm(gem.metabolites, desc="Predicting transformed standard Gibbs free energy for metabolites"):
-        met.pKa_source = 'chemaxon_pKa_db'   # record source for debugging
         Data[met.id] = {}
         for cid_type, comp in met.compound.items():
+            comp.pKa_source = 'chemaxon_pKa_db'   # record source for debugging
             Data[met.id][cid_type] = comp.transformed_standard_dGf_prime
     Met_df = pd.DataFrame(Data).T
 
