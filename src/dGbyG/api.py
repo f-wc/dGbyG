@@ -798,7 +798,13 @@ def predict_transformed_dG_prime_for_GEM(
         for cid_type, cid in met.annotation.items():
             if cid_type in use_types:
                 # If cid is a list, take the first element (assume it's the primary ID)
-                comp = Compound(cid, cid_type) if isinstance(cid, str) else Compound(cid[0], cid_type)
+                if isinstance(cid, str):
+                    comp = Compound(cid, cid_type)
+                else:
+                    for sub_cid in cid:
+                        comp = Compound(sub_cid, cid_type)
+                        if comp.mol:
+                            break
                 comp.condition = conditions.get(met.compartment, default_condition)
                 met.compound[cid_type] = comp
 
