@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dGbyG"
+dynamic = ["version"]
+description = "dGbyG"
+authors = [
+    {name = "Fan Wenchao", email = "12133024@mail.sustech.edu.cn"},
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "pandas",
+    "cobra",
+    "tqdm",
+    "rdkit",
+    "torch",
+    "torch-geometric",
+    "biopython",
+    "pubchempy",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/f-wc/dGbyG"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = {find = {where = ["src"]}}
+
+[tool.setuptools.dynamic]
+version = {attr = "dGbyG.__version__"}
