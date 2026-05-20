@@ -75,7 +75,11 @@ def get_pKa_from_chemaxon_rest(smiles:str, temperature:float) -> dict:
 
 
 def check_license():
-    jpype.startJVM(f'-Dchemaxon.license.url={chemaxon_license_file_path}', '-Djava.util.logging.level=SEVERE')
+    jpype.startJVM(f'-Dchemaxon.license.url={chemaxon_license_file_path}')
+    # 动态设置根 Logger 级别
+    Logger = jpype.JClass('java.util.logging.Logger')
+    root = Logger.getLogger('')
+    root.setLevel(jpype.JClass('java.util.logging.Level').SEVERE)
     for p in chemaxon_jar_dir.iterdir():
         jpype.addClassPath(p)
     isLicensed = jpype.JClass('chemaxon.marvin.calculations.pKaPlugin')().isLicensed()
@@ -196,7 +200,11 @@ def _batch_get_pKa_using_chemaxon_java(smiles_list:List[str], temperature:float)
         pass
     
     # 
-    jpype.startJVM(f'-Dchemaxon.license.url={chemaxon_license_file_path}', '-Djava.util.logging.level=SEVERE')
+    jpype.startJVM(f'-Dchemaxon.license.url={chemaxon_license_file_path}')
+    # 动态设置根 Logger 级别
+    Logger = jpype.JClass('java.util.logging.Logger')
+    root = Logger.getLogger('')
+    root.setLevel(jpype.JClass('java.util.logging.Level').SEVERE)
     for p in chemaxon_jar_dir.iterdir():
         jpype.addClassPath(p)
 
@@ -553,7 +561,7 @@ def batch_predict_and_save_pka(
         return pka_results
 
 
-def get_pKa_methods():
+def get_pKa_methods(source = 'auto'):
     """Return a dict of available pKa prediction methods based on current environment.
 
     Checks for local ChemAxon database files and Java plugin availability to
@@ -564,12 +572,11 @@ def get_pKa_methods():
     """
     methods = {}
 
-    # Use the local ChemAxon pKa database if the file is present.
-    if os.path.isfile(config.chemaxon_pka_db_path):
-        methods['chemaxon_pKa_db'] = load_pka_by_smiles
+    # Use the local ChemAxon pKa database.
+    methods['chemaxon_pKa_db'] = load_pka_by_smiles
 
     # Use the ChemAxon Java plugin if available.
-    if is_chemaxon_java_available():
+    if source in ['auto', 'chemaxon'] and is_chemaxon_java_available():
         methods['chemaxon'] = get_pKa_from_chemaxon
 
     # ChemAxon REST API is always available as a fallback/primary option.
