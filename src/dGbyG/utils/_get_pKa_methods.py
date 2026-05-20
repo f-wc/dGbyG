@@ -522,7 +522,7 @@ def batch_predict_and_save_pka(
     # ------------------------------------------------------------------
     # 4. Run batch prediction via ChemAxon (if needed and available)
     # ------------------------------------------------------------------
-    if is_chemaxon_java_available() and to_predict:
+    if to_predict and is_chemaxon_java_available():
         print("---------- ChemAxon pKa plugin is available ----------")
         # NOTE: The following print statement can be misleading when recalc_existing=True
         # because it says "new ones" but actually predicts all molecules.
