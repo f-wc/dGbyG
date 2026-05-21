@@ -6,6 +6,7 @@ import base64
 from io import BytesIO
 
 from rdkit import Chem
+from rdkit.Chem import Draw
 from rdkit.Chem.rdchem import Mol
 import numpy as np
 from typing import Dict, Tuple, Union, List
@@ -95,7 +96,7 @@ class Compound(object):
             for atom in self.mol.GetAtoms():
                 atom.SetProp("atomNote", str(atom.GetIdx()))
                 # atom.SetProp('molAtomMapNumber',str(atom.GetIdx()))
-        return Chem.Draw.MolToImage(Chem.RemoveHs(self.mol)) if self.mol else None
+        return Draw.MolToImage(Chem.RemoveHs(self.mol)) if self.mol else None
 
     @property
     def atom_bag(self) -> Dict[str, int | float]:
