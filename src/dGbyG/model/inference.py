@@ -17,6 +17,7 @@ class Inference_Model(nn.Module):
             self.device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
         else:
             self.device = device
+        self.device = torch.device(self.device)
 
         # 
         if isinstance(folder_path, str):
@@ -60,8 +61,14 @@ class Inference_Model(nn.Module):
             outputs = torch.zeros(size=(self.num_models, self.num_head, data.x.shape[0]), requires_grad=False) # shape=[number of model, number of head, atom number]
         
         with torch.no_grad():
-            for i, head_list in enumerate(self.MPNN_models.values()):
-                outputs[i] = torch.stack([head(data, mode) for head in head_list], dim=0)
+            if self.device.type == 'cuda' and False:
+                # TODO: 
+                with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+                    for i, head_list in enumerate(self.MPNN_models.values()):
+                        outputs[i] = torch.stack([head(data, mode) for head in head_list], dim=0)
+            else:   # fallback to float32
+                for i, head_list in enumerate(self.MPNN_models.values()):
+                    outputs[i] = torch.stack([net(data, mode) for net in head_list], dim=0) # TODO: shape = [M, H, B, 1]
         idx = torch.argmin(outputs.std(dim=1), dim=0)
         outputs = outputs[idx, :, torch.arange(len(idx), device=outputs.device)].T # outputs.shape = [number of head, 1] or [number of head, atom number]
 
