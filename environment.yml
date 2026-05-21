@@ -11,7 +11,7 @@ dependencies:
   - brotli=1.1.0
   - brotli-bin=1.1.0
   - bzip2=1.0.8
-  - ca-certificates=2025.8.3
+  - ca-certificates=2025.10.5
   - cairo=1.18.4
   - charset-normalizer=3.4.3
   - comm=0.2.3
@@ -97,7 +97,7 @@ dependencies:
   - numpy=2.3.2
   - openjpeg=2.5.3
   - openldap=2.6.10
-  - openssl=3.5.3
+  - openssl=3.5.4
   - packaging=25.0
   - pandas=2.3.2
   - parso=0.8.5
@@ -129,6 +129,7 @@ dependencies:
   - readline=8.2
   - reportlab=4.4.3
   - rlpycairo=0.4.0
+  - scipy=1.16.3
   - six=1.17.0
   - sqlalchemy=2.0.43
   - stack_data=0.6.3
@@ -158,6 +159,7 @@ dependencies:
       - appdirs==1.4.4
       - attrs==25.3.0
       - certifi==2025.8.3
+      - chemaxon==25.1.0b6
       - cobra==0.29.1
       - depinfo==2.2.0
       - diskcache==5.6.3
@@ -212,4 +214,3 @@ dependencies:
       - typing-inspection==0.4.1
       - urllib3==2.5.0
       - yarl==1.20.1
-prefix: /home/fanwc/anaconda3/envs/dGbyG
