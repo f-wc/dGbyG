@@ -22,6 +22,8 @@ dependencies = [
     "torch-geometric",
     "biopython",
     "pubchempy",
+    "JPype1",
+    "portalocker",    
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

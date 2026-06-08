@@ -41,7 +41,7 @@ git clone https://github.com/f-wc/dGbyG.git
 #### Install the required dependencies:
 ```bash
 cd /path/to/dGbyG
-conda env create -f environment.yaml -n dGbyG
+conda env create -f environment.yml -n dGbyG
 ```
 
 #### Install `chemaxon.marvin.calculations.pKaPlugin`(optional)
