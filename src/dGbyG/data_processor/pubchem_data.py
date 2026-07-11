@@ -53,11 +53,11 @@ def pubchem_gz_to_db(source_file, target_file, chunksize: int = 1000000):
         if i % 10 == 0:  # 每 10 批打印一次进度
             elapsed = time.time() - start_time
             speed = total_rows / elapsed
-            print(f"已插入 {total_rows:,} 行，已耗时 {elapsed:.1f} 秒，速度 {speed:.0f} 行/秒")
+            print(f"Inserted {total_rows:,} rows, elapsed {elapsed:.1f}s, speed {speed:.0f} rows/s")
     
     # 创建索引（主键已自动创建，无需额外操作）
     # 可执行 VACUUM 以优化数据库大小
     conn.execute("VACUUM")
     conn.close()
-    print(f"完成！共插入 {total_rows:,} 行，数据库文件：{target_file}")
+    print(f"Done! Total {total_rows:,} rows inserted, database file: {target_file}")
     return
