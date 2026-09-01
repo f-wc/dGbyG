@@ -152,6 +152,20 @@ def predict_transformed_dG_prime_for_GEM(
         for cid_type, comp in met.compound.items():
             comp.pKa_source = 'chemaxon_pKa_db'   # record source for debugging
             Data[met.id][cid_type] = comp.transformed_standard_dGf_prime
+
+        # Calculate median across all valid identifiers
+        met_dGf_values = []
+        for comp in met.compound.values():
+            if comp.mol is not None:
+                dGf_mean, _ = comp.transformed_standard_dGf_prime
+                if not np.isnan(dGf_mean):
+                    met_dGf_values.append(dGf_mean)
+
+        if met_dGf_values:
+            Data[met.id]['median'] = (np.median(met_dGf_values), np.nan)
+        else:
+            Data[met.id]['median'] = (np.nan, np.nan)
+
     Met_df = pd.DataFrame(Data).T
 
     # ------------------------------------------------------------------
@@ -159,16 +173,44 @@ def predict_transformed_dG_prime_for_GEM(
     # ------------------------------------------------------------------
     Data = {}
     for rxn in tqdm(gem.reactions, desc="Predicting transformed standard Gibbs free energy for reactions"):
-        rxn_dict = {}
+        # Collect all valid dGr_prime values from all identifiers
+        rxn_dGr_values = []
+
         for met, coeff in rxn.metabolites.items():
-            # Find the first Compound object associated with this metabolite that has a valid mol
-            comp = Compound(None, None)        # fallback empty compound
+            # Collect transformed_standard_dGf_prime for all valid compounds
+            met_dGf_values = []
             for comp in met.compound.values():
                 if comp.mol is not None:
+                    dGf_mean, _ = comp.transformed_standard_dGf_prime
+                    if not np.isnan(dGf_mean):
+                        met_dGf_values.append(dGf_mean)
+
+            # Use median of this metabolite's values
+            if met_dGf_values:
+                met_median_dGf = np.median(met_dGf_values)
+            else:
+                met_median_dGf = np.nan
+
+            # Accumulate contribution to reaction dGr
+            rxn_dGr_values.append(met_median_dGf * coeff)
+
+        # Calculate reaction dGr from median-based metabolite values
+        if rxn_dGr_values and not all(np.isnan(rxn_dGr_values)):
+            dGr_prime = np.nansum(rxn_dGr_values)
+            # For SD, use the first valid compound's SD as approximation
+            sd_value = np.nan
+            for met in rxn.metabolites.keys():
+                for comp in met.compound.values():
+                    if comp.mol is not None:
+                        _, sd_value = comp.transformed_standard_dGf_prime
+                        if not np.isnan(sd_value):
+                            break
+                if not np.isnan(sd_value):
                     break
-            rxn_dict[comp] = coeff
-        reaction = Reaction(rxn_dict, cids_type='compound')
-        Data[rxn.id] = reaction.transformed_standard_dGr_prime   # expected to be (dGr, sd)
+            Data[rxn.id] = (dGr_prime, sd_value if not np.isnan(sd_value) else 0.0)
+        else:
+            Data[rxn.id] = (np.nan, np.nan)
+
     Rxn_df = pd.DataFrame(Data, index=['dGr_prime', 'SD of dGr_prime']).T
 
     return Met_df, Rxn_df
