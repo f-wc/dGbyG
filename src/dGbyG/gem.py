@@ -14,6 +14,7 @@ from .utils._get_pKa_methods import batch_predict_and_save_pka
 from .constants import default_condition
 
 
+
 def predict_transformed_dG_prime_for_GEM(
     gem: cobra.Model,
     compartment_conditions: Dict[str, Dict[str, float | int]] | None = None,
@@ -26,8 +27,9 @@ def predict_transformed_dG_prime_for_GEM(
     For each metabolite, this function extracts compound identifiers from annotations,
     creates Compound objects, retrieves or predicts pKa values using ChemAxon, and then
     computes transformed standard Gibbs free energy of formation. For reactions, it
-    combines the transformed dGf_prime values of participating metabolites to calculate
-    the transformed standard Gibbs free energy of reaction.
+    uses the median transformed dGf_prime across all valid identifiers for each
+    participating metabolite to calculate the transformed standard Gibbs free energy
+    of reaction.
 
     The function also persists pKa predictions into a local SQLite database via
     `batch_predict_and_save_pka`.
@@ -43,7 +45,7 @@ def predict_transformed_dG_prime_for_GEM(
         of physicochemical conditions (e.g., `{'pH': 7.5, 'pMg': 3.0, 'I': 0.2}`).
         If a compartment is not found in this dictionary, a fallback is attempted:
         first the literal key `'c'`, then the full name of the default cytosolic
-        compartment (`gem.compartments['c']`), and finally the module‑level
+        compartment (`gem.compartments['c']`), and finally the module-level
         `default_condition`. If `compartment_conditions` is None, all compartments
         default to `default_condition`.
     use_met_id_types : str or list of str, default='all'
@@ -78,7 +80,7 @@ def predict_transformed_dG_prime_for_GEM(
         `Compound.transformed_standard_dGf_prime`) are missing.
     """
     # ------------------------------------------------------------------
-    # 1. Build compartment‑specific condition dictionaries
+    # 1. Build compartment-specific condition dictionaries
     # ------------------------------------------------------------------
     conditions = {}
     if isinstance(compartment_conditions, dict):
@@ -136,7 +138,7 @@ def predict_transformed_dG_prime_for_GEM(
                 met.compound[cid_type] = comp
 
     # ------------------------------------------------------------------
-    # 5. Collect all unique SMILES from metabolites and pre‑compute/persist pKa
+    # 5. Collect all unique SMILES from metabolites and pre-compute/persist pKa
     # ------------------------------------------------------------------
     Smiles = []
     for met in gem.metabolites:
@@ -155,20 +157,93 @@ def predict_transformed_dG_prime_for_GEM(
     Met_df = pd.DataFrame(Data).T
 
     # ------------------------------------------------------------------
-    # 7. Build DataFrame of transformed dGr_prime per reaction
+    # 7. Aggregate metabolite dGf_prime values and calculate dGr_prime
     # ------------------------------------------------------------------
+    median_met_dGf = {}
+
+    for met in gem.metabolites:
+        valid_dGf = []
+        for comp in met.compound.values():
+            if comp.mol is None:
+                continue
+            dGf, sd = comp.transformed_standard_dGf_prime
+            if np.isfinite(dGf):
+                valid_dGf.append((dGf, sd))
+
+        valid_dGf.sort(key=lambda x: x[0])
+        n_valid = len(valid_dGf)
+
+        if n_valid == 0:
+            median_met_dGf[met.id] = (np.nan, np.nan)
+        elif n_valid % 2 == 1:
+            # For an odd number of identifiers, retain the SD of the
+            # identifier whose dGf is the median.
+            median_met_dGf[met.id] = valid_dGf[n_valid // 2]
+        else:
+            # For an even number of identifiers, the median is the mean of
+            # the two central dGf values. mean SDs.
+            lower_dGf, lower_sd = valid_dGf[n_valid // 2 - 1]
+            upper_dGf, upper_sd = valid_dGf[n_valid // 2]
+            median_dGf = (lower_dGf + upper_dGf) / 2
+            median_sd = (lower_sd + upper_sd) / 2
+            median_met_dGf[met.id] = (median_dGf, median_sd)
+
+    Met_df['median'] = pd.Series({met_id: v for met_id, v in median_met_dGf.items()})
+
     Data = {}
     for rxn in tqdm(gem.reactions, desc="Predicting transformed standard Gibbs free energy for reactions"):
+        metabolite_values = [median_met_dGf[met.id] for met in rxn.metabolites]
+        all_metabolites_valid = all(np.isfinite(dGf) for dGf, _ in metabolite_values)
+
+        # As in the original implementation, a reaction is not calculable if
+        # any participating metabolite has no valid thermodynamic estimate.
+        if not all_metabolites_valid:
+            Data[rxn.id] = (np.nan, np.nan)
+            continue
+
+        # Retain the original structural representatives so that Reaction
+        # applies the same balance check. These compounds are not used to
+        # select the thermodynamic values below.
         rxn_dict = {}
+        compound_to_met_id = {}
         for met, coeff in rxn.metabolites.items():
-            # Find the first Compound object associated with this metabolite that has a valid mol
-            comp = Compound(None, None)        # fallback empty compound
-            for comp in met.compound.values():
-                if comp.mol is not None:
-                    break
+            comp = next(
+                comp for comp in met.compound.values()
+                if comp.mol is not None
+            )
             rxn_dict[comp] = coeff
+            compound_to_met_id[comp] = met.id
+
         reaction = Reaction(rxn_dict, cids_type='compound')
-        Data[rxn.id] = reaction.transformed_standard_dGr_prime   # expected to be (dGr, sd)
+
+        if not reaction.is_balanced:
+            Data[rxn.id] = (np.nan, np.nan)
+            continue
+
+        dGr_prime = 0.0
+        dGr_variance = 0.0
+        reaction_is_valid = True
+
+        for comp, coeff in reaction.reaction.items():
+            if comp in compound_to_met_id:
+                dGf, sd = median_met_dGf[compound_to_met_id[comp]]
+            else:
+                # Use the original value for a balancing compound, such as
+                # water, that may have been added by Reaction.balance().
+                dGf, sd = comp.transformed_standard_dGf_prime
+
+            if not np.isfinite(dGf):
+                reaction_is_valid = False
+                break
+
+            dGr_prime += coeff * dGf
+            dGr_variance += (coeff * sd) ** 2
+
+        if reaction_is_valid:
+            Data[rxn.id] = (dGr_prime, np.sqrt(dGr_variance))
+        else:
+            Data[rxn.id] = (np.nan, np.nan)
+
     Rxn_df = pd.DataFrame(Data, index=['dGr_prime', 'SD of dGr_prime']).T
 
     return Met_df, Rxn_df
