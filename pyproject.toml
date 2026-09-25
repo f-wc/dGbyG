@@ -13,17 +13,17 @@ license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "numpy",
-    "pandas",
-    "cobra",
-    "tqdm",
-    "rdkit",
-    "torch",
-    "torch-geometric",
-    "biopython",
-    "pubchempy",
-    "JPype1",
-    "portalocker",    
+    "numpy>=2.3.2",
+    "pandas>=2.3.2",
+    "cobra>=0.29.1",
+    "tqdm>=4.67.1",
+    "rdkit>=2025.03.6",
+    "torch>=2.8.0",
+    "torch-geometric>=2.6.1",
+    "biopython>=1.85",
+    "pubchempy>=1.0.5",
+    "JPype1>=1.6.0",
+    "portalocker>=3.2.0",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
